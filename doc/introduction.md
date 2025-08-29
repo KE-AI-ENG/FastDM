@@ -36,13 +36,9 @@ Fast Diffusion Models(FASTDM): 是一个扩散模型推理工程，已经在公�
 无论是fp8还是int8，均采用了per-channel/per-token量化尺度，经测试，生成效果与16bit差异不大。但是如果使用[Qwen-Image](https://huggingface.co/Qwen/Qwen-Image)模型, 我们建议使用int8而不是fp8模式。
 
 矩阵乘的int8量化，activation采用了非对称模式，weight采用对称模式，fp8量化的activation和weight均采用对称模式。所以matrixmul算子的接口，int8会比fp8多zero-point与weight-col-sum两个tensor参数，weight-col-sum是预先计算好的，用于加速推理。非对称模式量化矩阵乘推导过程如下（忽略bias，*表示逐元素乘法，@表示矩阵乘）。
-$$
-    D = A_r @ W_r \\
-    = [(a_s @ j_a) * (A_q - z_q @ j_a)] @ [(j_w @ w_s) * W_q] \\
-    = (a_s @ j_a) * (j_w @ w_s) * [(A_q - z_q @ j_a)@W_q] \\ 
-    = (a_s @ j_a) * (j_w @ w_s) * (A_q @W_q - z_q @ j_a @W_q) \\ 
-    = (a_s @ j_a) * (j_w @ w_s) * [A_q @W_q - z_q @ (j_a @W_q)] \\ 
-$$
+
+![image](../assets/quant-formula.PNG)
+
 其中，D是fp16/bf16的矩阵，A_r是fp16/bf16的activation，W_r是fp16/bf16的weight。A_r的反量化公式为$A_r = (a_s @ j_a) * (A_q - z_q @ j_a)$，其中a_s是per-token量化的量化因子，是一个列向量；j_a是一个全1行向量，$a_s @ j_a$的目的是将a_s广播为与A_q同shape的矩阵，$a_s @ j_a$同理；A_q是量化后的activation矩阵；z_q是非对称量化的零点，是一个列向量。W_r的反量化公式为$W_r = (j_w @ w_s) * W_q$，其中w_s是per-channel量化的量化因子，是一个行向量；j_w是一个全1列向量，$j_w @ w_s$的目的是将w_s广播为与W_q同shape的矩阵；W_q是量化后weight矩阵。
 
 self-attention的量化，主流方法均采用per-head或更细尺度，但是这里我们采用了per-tensor且未实时统计scale而是设为1.0(FastDM中默认是关闭这个flag的)，有兴趣的同学可以探索不同方法对精度与性能的影响，强烈推荐[SageAttention](https://github.com/thu-ml/SageAttention)
