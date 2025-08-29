@@ -1,0 +1,6 @@
+{
+    "enable_caching": true,
+    "threshold": 0.2,
+    "negtive_cache": false,
+    "coefficients": [-9.84612627e+04, 7.74438526e+03, -7.67192263e+00, 1.50064997e-01, 9.97972012e-02]
+}

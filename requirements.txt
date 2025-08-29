@@ -1,0 +1,12 @@
+torch == 2.7.1
+diffusers
+transformers
+numpy==1.26.4
+accelerate
+peft
+triton
+opencv-python # for controlnet img
+ninja # for build
+ftfy # for wan mdoel
+protobuf
+sentencepiece

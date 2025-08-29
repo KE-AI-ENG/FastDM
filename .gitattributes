@@ -1,0 +1,5 @@
+csrc/include/attention/* linguist-generated
+csrc/include/cutlass/* linguist-generated
+csrc/include/cutlass/**/* linguist-generated
+csrc/include/cutlass_extensions/* linguist-generated
+examples/training/train_control_lora_flux.py linguist-generated
