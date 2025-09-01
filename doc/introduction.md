@@ -50,7 +50,7 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
 python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world" --cache-config ../xcaching/configs/flux.json
 ```
 
-其中qwenimage采用fbcache，其他模型采用teacache.teacache具体原理可以参考其[paper](https://huggingface.co/papers/2411.19108)
+其中wan2.2采用FBcache，其他模型采用teacache.teacache具体原理可以参考其[paper](https://huggingface.co/papers/2411.19108)
 
 目前teacache的所用的拟合参数coefficients是采用提前算好的默认值，我们还提供了coefficients拟合计算脚本，如果有需要可以通过脚本(位于examples/xcaching目录下)重新计算。
 
