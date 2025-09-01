@@ -114,7 +114,9 @@ text2video：
     
   wan-A14B：**height = 720，width = 1280，num_frames = 81，num_inference_steps = 40**
 
-注：以下数据中，qwen-image与wan的H20性能数据使用了[SageAttention](https://github.com/thu-ml/SageAttention), 其他模型和卡型都未使用。SageAttention性能比torch-sdpa算子有较大提升，详情可参考该[开源工程](https://github.com/thu-ml/SageAttention)。如果环境中安装了SageAttention，FastDM的CUDA-backend模式下会直接调用。
+**注**：以下数据中，qwen-image与wan的H20性能数据使用了[SageAttention](https://github.com/thu-ml/SageAttention), 其他模型和卡型都未使用。SageAttention性能比torch-sdpa算子有较大提升，详情可参考该[开源工程](https://github.com/thu-ml/SageAttention)。如果环境中安装了SageAttention，FastDM的CUDA-backend模式下会直接调用。
+
+Qwen-Image的A100与RTX-8000数据使能了`--qwen-oom-resolve`以解决OOM问题
 
 ![image](./assets/perf.PNG)
 
