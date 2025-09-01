@@ -193,6 +193,10 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         self.enable_caching = cache_config.enable_caching if cache_config is not None else False
         # Note: # qwenimage will excute the forward separately in one step for prompt and negative prompt.
         if self.enable_caching:
+            self.accumulated_rel_l1_distance_dict = {
+                "positive": 0,
+                "negative": 0
+            }
             self.previous_modulated_input_dict = {
                 "positive": None,
                 "negative": None
@@ -357,17 +361,17 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
 
             if current_step == 0:
                 should_calc = True
-                self.accumulated_rel_l1_distance = 0
+                self.accumulated_rel_l1_distance_dict[cache_key] = 0
             else: 
                 coefficients = self.coefficients[cache_key]
                 rescale_func = np.poly1d(coefficients)
-                self.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.previous_modulated_input_dict[cache_key]).abs().mean() / self.previous_modulated_input_dict[cache_key].abs().mean()).cpu().item())
+                self.accumulated_rel_l1_distance_dict[cache_key] += rescale_func(((modulated_inp-self.previous_modulated_input_dict[cache_key]).abs().mean() / self.previous_modulated_input_dict[cache_key].abs().mean()).cpu().item())
 
-                if self.accumulated_rel_l1_distance < self.cache_config.threshold:
+                if self.accumulated_rel_l1_distance_dict[cache_key] < self.cache_config.threshold:
                     should_calc = False
                 else:
                     should_calc = True
-                    self.accumulated_rel_l1_distance = 0
+                    self.accumulated_rel_l1_distance_dict[cache_key] = 0
             self.previous_modulated_input_dict[cache_key] = modulated_inp
 
         if self.enable_caching:

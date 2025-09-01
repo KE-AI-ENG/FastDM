@@ -72,28 +72,30 @@ def teacache_forward(
         encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
 
     # get teacache data
-    # inp = hidden_states.clone()
-    # temb_ = timestep_proj.clone()
-    # if temb_.ndim == 4:
-    #     # temb: batch_size, seq_len, 6, inner_dim (wan2.2 ti2v)
-    #     shift_msa, scale_msa, gate_msa, c_shift_msa, c_scale_msa, c_gate_msa = (
-    #         self.blocks[0].scale_shift_table.unsqueeze(0) + temb_.float()
-    #     ).chunk(6, dim=2)
-    #     # batch_size, seq_len, 1, inner_dim
-    #     shift_msa = shift_msa.squeeze(2)
-    #     scale_msa = scale_msa.squeeze(2)
-    #     gate_msa = gate_msa.squeeze(2)
-    #     c_shift_msa = c_shift_msa.squeeze(2)
-    #     c_scale_msa = c_scale_msa.squeeze(2)
-    #     c_gate_msa = c_gate_msa.squeeze(2)
-    # else:
-    #     # temb: batch_size, 6, inner_dim (wan2.1/wan2.2 14B)
-    #     shift_msa, scale_msa, gate_msa, c_shift_msa, c_scale_msa, c_gate_msa = (
-    #         self.blocks[0].scale_shift_table + temb_.float()
-    #     ).chunk(6, dim=1)
+    inp = hidden_states.clone()
+    temb_ = timestep_proj.clone()
+    if temb_.ndim == 4:
+        # temb: batch_size, seq_len, 6, inner_dim (wan2.2 ti2v)
+        shift_msa, scale_msa, gate_msa, c_shift_msa, c_scale_msa, c_gate_msa = (
+            self.blocks[0].scale_shift_table.unsqueeze(0) + temb_.float()
+        ).chunk(6, dim=2)
+        # batch_size, seq_len, 1, inner_dim
+        shift_msa = shift_msa.squeeze(2)
+        scale_msa = scale_msa.squeeze(2)
+        gate_msa = gate_msa.squeeze(2)
+        c_shift_msa = c_shift_msa.squeeze(2)
+        c_scale_msa = c_scale_msa.squeeze(2)
+        c_gate_msa = c_gate_msa.squeeze(2)
+    else:
+        # temb: batch_size, 6, inner_dim (wan2.1/wan2.2 14B)
+        shift_msa, scale_msa, gate_msa, c_shift_msa, c_scale_msa, c_gate_msa = (
+            self.blocks[0].scale_shift_table + temb_.float()
+        ).chunk(6, dim=1)
 
-    # norm_hidden_states = (self.blocks[0].norm1(inp.float()) * (1 + scale_msa) + shift_msa).type_as(inp)
-    self.modulated_inp.append(timestep_proj.clone().to('cpu'))
+    norm_hidden_states = (self.blocks[0].norm1(inp.float()) * (1 + scale_msa) + shift_msa).type_as(inp)
+    self.modulated_inp.append(norm_hidden_states.clone().to('cpu'))
+    # self.modulated_inp.append(timestep_proj.clone().to('cpu'))
+
 
     # 4. Transformer blocks
     ori_hidden_states = hidden_states.clone()
@@ -173,22 +175,31 @@ def load_prompts(prompt_file, total_prompts, dataset_type='google'):
     
     return {"prompt": prompt_dataset}
 
-def get_data_diff(inp, pre_res):
+def get_data_diff(inp, pre_res, num_steps):
     """Calculate differences for inp and pre_res"""
+    inp_len = len(inp)
+    interval = inp_len // num_steps
+    
     modulated_inp_diff = []
     pre_res_diff = []
     
     # Process inp differences
-    for k in range(1, len(inp)):
-        diff = torch.abs(inp[k] - inp[k-1]).mean() / torch.abs(inp[k-1]).mean()
+    for k in range(interval, inp_len, interval):
+        diff = torch.abs(inp[k] - inp[k-interval]).mean() / torch.abs(inp[k-interval]).mean()
         diff = diff.to(torch.float32)
         modulated_inp_diff.append(diff.item())  # Convert to Python scalar
-    
-    # Process pre_res differences
-    for k in range(1, len(pre_res)):
-        diff = torch.abs(pre_res[k] - pre_res[k-1]).mean() / torch.abs(pre_res[k-1]).mean()
+        diff = torch.abs(pre_res[k] - pre_res[k-interval]).mean() / torch.abs(pre_res[k-interval]).mean()
         diff = diff.to(torch.float32)
         pre_res_diff.append(diff.item())
+    
+    if interval==2:
+        for k in range(interval + 1, inp_len, interval):
+            diff = torch.abs(inp[k] - inp[k-interval]).mean() / torch.abs(inp[k-interval]).mean()
+            diff = diff.to(torch.float32)
+            modulated_inp_diff.append(diff.item())  # Convert to Python scalar
+            diff = torch.abs(pre_res[k] - pre_res[k-interval]).mean() / torch.abs(pre_res[k-interval]).mean()
+            diff = diff.to(torch.float32)
+            pre_res_diff.append(diff.item())
     
     return modulated_inp_diff, pre_res_diff
 
@@ -254,7 +265,8 @@ def worker_process(gpu_id, prompts, args, start_idx):
         # Get diff data
         inp_diff, pre_resdu_diff = get_data_diff(
             pipeline.transformer.__class__.modulated_inp, 
-            pipeline.transformer.__class__.pre_res
+            pipeline.transformer.__class__.pre_res,
+            args.num_steps
         )
         all_inp_diff.append(inp_diff)
         all_pre_res_diff.append(pre_resdu_diff)

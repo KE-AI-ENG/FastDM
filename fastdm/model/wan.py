@@ -212,9 +212,28 @@ class WanTransformer3DModelCore(BaseModelCore):
         # teacache
         self.cache_config = cache_config
         self.enable_caching = cache_config.enable_caching if cache_config is not None else False
-        self.accumulated_rel_l1_distance = 0
-        self.previous_modulated_input = None
-        self.previous_residual = None
+        # Note: # wan will excute the forward separately in one step for prompt and negative prompt.
+        if self.enable_caching:
+            self.accumulated_rel_l1_distance_dict = {
+                "positive": 0.0,
+                "negative": 0.0
+            }
+            self.previous_modulated_input_dict = {
+                "positive": None,
+                "negative": None
+            }
+            self.previous_residual_dict = {
+                "positive": None,
+                "negative": None
+            }
+            self.coefficients = {
+                "positive": self.cache_config.coefficients,
+                "negative": self.cache_config.negtive_coefficients
+            } #txt_modulated
+            self.cache_status = {
+                "positive": True,
+                "negative": False
+            }
 
     def _pre_part_loading(self):
         self.patch_embedding_weight = self.init_weight(['patch_embedding.weight'])
@@ -331,33 +350,46 @@ class WanTransformer3DModelCore(BaseModelCore):
             # get current step
             current_step = self.cache_config.current_steps_callback() if self.cache_config.current_steps_callback() is not None else 0
 
-            modulated_inp = timestep_proj.clone()
+            # first block forward
+            first_hidden_states = self.blocks[0].forward(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
+            modulated_inp = first_hidden_states.clone()
 
-            if current_step == 0 or self.previous_modulated_input is None:
+            if self.cache_config.negtive_cache:
+                cache_key = None
+                for k in self.cache_status:
+                    if self.cache_status[k] and cache_key is None:
+                        cache_key = k
+                    self.cache_status[k] = not self.cache_status[k]
+            else:
+                cache_key = "positive"
+
+            if current_step == 0 or self.previous_modulated_input_dict[cache_key] is None:
                 should_calc = True
-                self.accumulated_rel_l1_distance = 0
+                self.accumulated_rel_l1_distance_dict[cache_key] = 0
             else: 
-                # coefficients = [-9.84612627e+04, 7.74438526e+03, -7.67192263e+00, 1.50064997e-01, 9.97972012e-02] # 5B
-                # coefficients = [ 4.82797105e+04, -1.50460110e+04, 9.23539780e+02, -7.47840115e+00, 2.36280827e-01] # A14B
-                rescale_func = np.poly1d(self.cache_config.coefficients)
-                self.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.previous_modulated_input).abs().mean() / self.previous_modulated_input.abs().mean()).cpu().item())
-                if self.accumulated_rel_l1_distance < self.cache_config.threshold:
+                # rescale_func = np.poly1d(self.cache_config.coefficients)
+                # self.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.previous_modulated_input).abs().mean() / self.previous_modulated_input.abs().mean()).cpu().item())
+
+                self.accumulated_rel_l1_distance_dict[cache_key] += ((modulated_inp-self.previous_modulated_input_dict[cache_key]).abs().mean() / self.previous_modulated_input_dict[cache_key].abs().mean()).cpu().item()
+                
+                if self.accumulated_rel_l1_distance_dict[cache_key] < self.cache_config.threshold:
                     should_calc = False
+                    print(f"Skipping calculation at step {current_step} with accumulated relative L1 distance: {self.accumulated_rel_l1_distance_dict[cache_key]:.4f}")
                 else:
                     should_calc = True
-                    self.accumulated_rel_l1_distance = 0
-            self.previous_modulated_input = modulated_inp 
+                    self.accumulated_rel_l1_distance_dict[cache_key] = 0
+            self.previous_modulated_input_dict[cache_key] = modulated_inp 
 
         # 4. Transformer blocks
         if self.enable_caching:
             if not should_calc:
-                hidden_states += self.previous_residual
+                hidden_states += self.previous_residual_dict[cache_key]
             else:
                 ori_hidden_states = hidden_states.clone()
-                # hidden_states = first_block_hidden_states
-                for block in self.blocks:
+                hidden_states = first_hidden_states
+                for block in self.blocks[1:]:
                     hidden_states = block.forward(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
-                self.previous_residual = hidden_states - ori_hidden_states
+                self.previous_residual_dict[cache_key] = hidden_states - ori_hidden_states
         else:
             for block in self.blocks:
                 hidden_states = block.forward(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
