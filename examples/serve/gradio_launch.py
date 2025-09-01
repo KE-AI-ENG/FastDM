@@ -25,8 +25,12 @@ def parseArgs():
     parser.add_argument('--data-type', default="bfloat16", help="data type")
     parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd3/qwen")
 
+    parser.add_argument('--qwen-oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
+
     # caching args
     parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
+
+    parser.add_argument('--port', type=int, default=7890, help="server ssh port number")
 
     return parser.parse_args()
 
@@ -38,7 +42,8 @@ class FastDMEngine:
                  quant_type=torch.float8_e4m3fn, 
                  kernel_backend="cuda", 
                  architecture="flux", 
-                 cache_config=None):
+                 cache_config=None,
+                 qwen_oom_resolve=False):
 
         torch.cuda.set_device(device_num)
 
@@ -60,13 +65,24 @@ class FastDMEngine:
                                                         cache_config=cache_config).eval()
         elif "qwen" == architecture:
             self.pipe.transformer = QwenTransformerWrapper(self.pipe.transformer.state_dict(), dtype=data_type, quant_type=quant_type, kernel_backend=kernel_backend,
-                                                        cache_config=cache_config).eval()
+                                                      cache_config=cache_config, need_resolve_oom=qwen_oom_resolve).eval()
+            if qwen_oom_resolve:
+                import os
+                import sys
+                from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
+                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+                from utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
+                AutoencoderKLQwenImage._decode = qwen_vae_new_decode
+                AutoencoderKLQwenImage._encode = qwen_vae_new_encode
         else:
             raise ValueError(
                 f"The {architecture} model is not supported!!!"
             )
 
-        self.pipe.to(f"cuda")
+        if "qwen" == architecture and qwen_oom_resolve:
+            self.pipe.vae.to("cuda")
+        else:
+            self.pipe.to(f"cuda")
 
     def generate(self, prompt_text, src_image=None, gen_seed=42, inf_step=25, gen_width=2048, gen_height=1024, max_len=512, guidance=3.5):
 
@@ -87,7 +103,8 @@ engine_ = FastDMEngine(model_path=args.model_path,
                        quant_type=torch.float8_e4m3fn if args.use_fp8 else (torch.int8 if args.use_int8 else None),
                        kernel_backend=args.kernel_backend, 
                        architecture=args.architecture, 
-                       cache_config=args.cache_config)
+                       cache_config=args.cache_config,
+                       qwen_oom_resolve=args.qwen_oom_resolve)
 
 # 定义图片生成函数
 def generate_image_from_prompt(prompt,
@@ -228,7 +245,7 @@ with gr.Blocks(title="FastDM生图服务", css=".gradio-container {max-width: 90
 if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7890,
+        server_port=args.port,
         share=False,  # 设置为True可生成临时公网链接
         show_error=True
     )

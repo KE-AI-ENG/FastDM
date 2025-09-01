@@ -32,6 +32,8 @@ def parseArgs():
     parser.add_argument('--use-int8', action='store_true', help="Enable int8 model inference")
     parser.add_argument('--kernel-backend', default="cuda", help="kernel backend: torch/triton/cuda")
 
+    parser.add_argument('--qwen-oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
+
     parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
 
     # caching args
@@ -77,12 +79,23 @@ if __name__ == "__main__":
     else:
         if is_qwen_img: #qwen image edit
             pipe.transformer = QwenTransformerWrapper(pipe.transformer.state_dict(), quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config).eval()
+                                                      cache_config=cache_config, need_resolve_oom=args.qwen_oom_resolve).eval()
+            if args.qwen_oom_resolve:
+                import os
+                import sys
+                from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
+                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+                from utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
+                AutoencoderKLQwenImage._decode = qwen_vae_new_decode
+                AutoencoderKLQwenImage._encode = qwen_vae_new_encode
         else: #/FLUX.1-Kontext-dev
             pipe.transformer = FluxTransformerWrapper(pipe.transformer.state_dict(), quant_type=quant_type, kernel_backend=args.kernel_backend,
                                                       cache_config=cache_config).eval()
 
-    pipe.to(f"cuda")
+    if is_qwen_img and args.qwen_oom_resolve:
+        pipe.vae.to("cuda")
+    else:
+        pipe.to(f"cuda")
 
     torch.cuda.empty_cache()
     gc.collect()

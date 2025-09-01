@@ -57,6 +57,8 @@ torch 2.7 or later
     
     `python text2img_demo.py --num-warmup-runs 1 --dump-image-path ./flux-krea-fp8.png --use-fp8 --model-path /path/to/FLUX.1-Krea-dev --architecture flux --guidance-scale 4.5 --width 1024 --prompts "A frog holding a sign that says hello world"`
 
+    **Note**: The Qwen-Image model typically requires over 50GB of vram to run, otherwise it will cause an Out-of-Memory (OOM) error. By configuring `--qwen-oom-resolve`, it can be run with only around 26GB. This allows it to run on graphics cards with 48GB of video memory, such as the A100-40G, 4090, and RTX-8000. This will cause the Transformer and VAE components to run on the GPU, while the text_encoder will run on the CPU.
+
     Generating images using Python scripts is cumbersome, so we often want a convenient web UI to control image generation.
     
     You can use the gradio_launch.py ​​script in the examples/serve folder to quickly build a web service. This allows you to trigger image generation from a web browser, with flexible options for prompts and generation parameters. 

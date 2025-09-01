@@ -58,6 +58,7 @@ class QwenTransformerWrapper(BaseModelWrapper):
             dtype=torch.bfloat16,
             quant_type=None, 
             kernel_backend="torch",
+            need_resolve_oom=False,
             cache_config: CacheConfig = None
         ):
         super().__init__(kernel_backend)
@@ -81,7 +82,8 @@ class QwenTransformerWrapper(BaseModelWrapper):
                                                         guidance_embeds=self.config.guidance_embeds, 
                                                         data_type=self.config.dtype, 
                                                         quant_dtype=quant_type,
-                                                        cache_config=cache_config)
+                                                        cache_config=cache_config,
+                                                        oom_ressolve=need_resolve_oom)
         self.core_model.weight_loading(ckpt_path)
 
     @torch.no_grad()

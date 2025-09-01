@@ -65,6 +65,8 @@ def parseArgs():
     parser.add_argument('--use-int8', action='store_true', help="Enable int8 model inference")
     parser.add_argument('--kernel-backend', default="cuda", help="kernel backend: torch/triton/cuda")
 
+    parser.add_argument('--qwen-oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
+
     parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
 
     parser.add_argument('--data-type', default="bfloat16", help="data type")
@@ -154,7 +156,15 @@ if __name__ == "__main__":
                                                       cache_config=cache_config).eval()
         elif "qwen" == args.architecture:
             pipe.transformer = QwenTransformerWrapper(pipe.transformer.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config).eval()
+                                                      cache_config=cache_config, need_resolve_oom=args.qwen_oom_resolve).eval()
+            if args.qwen_oom_resolve:
+                import os
+                import sys
+                from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
+                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+                from utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
+                AutoencoderKLQwenImage._decode = qwen_vae_new_decode
+                AutoencoderKLQwenImage._encode = qwen_vae_new_encode
         elif "wan" == args.architecture:
             pipe.transformer = WanTransformer3DWrapper(pipe.transformer.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend, config_json=f"{args.model_path}/transformer/config.json",
                                                     cache_config=cache_config).eval()
@@ -166,7 +176,10 @@ if __name__ == "__main__":
                 f"The {args.architecture} model is not supported!!!"
             )
 
-    pipe.to("cuda")
+    if "qwen" == args.architecture and args.qwen_oom_resolve:
+        pipe.vae.to("cuda")
+    else:
+        pipe.to("cuda")
 
     torch.cuda.empty_cache()
     gc.collect()

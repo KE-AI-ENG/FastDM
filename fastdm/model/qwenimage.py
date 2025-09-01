@@ -155,10 +155,13 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         data_type = torch.bfloat16,
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
         cache_config: CacheConfig = None,
+        oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
     ):
         super().__init__("DiT")
 
         self.quant_dtype = quant_dtype
+
+        self.need_resolve_oom = oom_ressolve
 
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
@@ -299,6 +302,16 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
             If `return_dict` is True, an [`~models.transformer_2d.Transformer2DModelOutput`] is returned, otherwise a
             `tuple` where the first element is the sample tensor.
         """
+
+        if self.need_resolve_oom: #need copy tensor to gpu
+            hidden_states = hidden_states.to(self.device)
+            if encoder_hidden_states is not None:
+                encoder_hidden_states = encoder_hidden_states.to(self.device)
+            if encoder_hidden_states_mask is not None:
+                encoder_hidden_states_mask = encoder_hidden_states_mask.to(self.device)
+            if timestep is not None:
+                timestep = timestep.to(self.device)
+
         if attention_kwargs is not None:
             attention_kwargs = attention_kwargs.copy()
             lora_scale = attention_kwargs.pop("scale", 1.0)
@@ -407,5 +420,8 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         # Use only the image part (hidden_states) from the dual-stream blocks
         hidden_states = self.norm_out.forward(hidden_states, temb)
         output = self.proj_out.forward(hidden_states)
+
+        if self.need_resolve_oom:
+            output = output.to("cpu")
 
         return (output,)

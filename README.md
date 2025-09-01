@@ -71,6 +71,8 @@ examples包括Text2Image, LORA, Image-Editing, Controlnet等demo, 这些例程�
 
     `python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world"`
 
+    **注**: Qwen-Image模型通常需要五十多GB显存才可以运行，否则会OOM，可以配置`--qwen-oom-resolve`，使其只需26GB左右即可运行，这样A100-40G和4090，RTX-8000等48GB显存的卡就都可以运行。它会使Transformer与vae部分在gpu运行，text_encoder部分在cpu运行。
+
     使用python脚本生成图片较繁琐，通常我们想要一个方便快捷的网页UI来控制图片生成。
     
     可以使用examples/serve文件夹下的gradio_launch.py脚本快速搭建一个web服务，这样就可以通过浏览器网页触发图片生成，可灵活修改prompts与生成参数。详情请参考[gradio服务demo](./examples/serve/readme.md)
@@ -113,8 +115,6 @@ text2video：
   wan-A14B：**height = 720，width = 1280，num_frames = 81，num_inference_steps = 40**
 
 注：以下数据中，qwen-image与wan的H20性能数据使用了[SageAttention](https://github.com/thu-ml/SageAttention), 其他模型和卡型都未使用。SageAttention性能比torch-sdpa算子有较大提升，详情可参考该[开源工程](https://github.com/thu-ml/SageAttention)。如果环境中安装了SageAttention，FastDM的CUDA-backend模式下会直接调用。
-
-RTX-8000中Qwen-Image数据通过`--data-type float16 --width 1024 --height 1024`得出，否则会OOM，显存进一步优化中
 
 ![image](./assets/perf.PNG)
 
