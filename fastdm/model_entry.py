@@ -2,7 +2,6 @@ import os
 from typing import Any, Dict, List, Optional, Union, Tuple
 from collections import namedtuple
 from contextlib import contextmanager
-from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
