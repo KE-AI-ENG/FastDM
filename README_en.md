@@ -2,6 +2,8 @@
 
 Fast Diffusion Models(FASTDM): A lightweight and concise implementation of Diffusion Models. It supports mainstream text-to-image/video model architectures, integrates with ComfyUI, and is compatible with various GPU architectures.
 
+FastDM also optimizes GPU memory usage, so larger Qwen-Image series models can run smoothly even on cards with 24GB of VRam.
+
 ![image](./assets/architecture.PNG)
 
 Please refer to [introduction](./doc/introduction.md) for more details.
@@ -57,7 +59,7 @@ torch 2.7 or later
     
     `python text2img_demo.py --num-warmup-runs 1 --dump-image-path ./flux-krea-fp8.png --use-fp8 --model-path /path/to/FLUX.1-Krea-dev --architecture flux --guidance-scale 4.5 --width 1024 --prompts "A frog holding a sign that says hello world"`
 
-    **Note**: The Qwen-Image model typically requires over 50GB of vram to run, otherwise it will cause an Out-of-Memory (OOM) error. By configuring `--qwen-oom-resolve`, it can be run with only around 26GB. This allows it to run on graphics cards with 48GB of video memory, such as the A100-40G, 4090, and RTX-8000. This will cause the Transformer and VAE components to run on the GPU, while the text_encoder will run on the CPU.
+    **Note**: The Qwen-Image model typically requires over 50GB of vram to run, otherwise it will cause an Out-of-Memory (OOM) error. By configuring `--qwen-oom-resolve`, it can be run with only around 20GB. This allows it to run on graphics cards with low VRam, such as the A100-40G, 4090/4090D, and RTX-8000. This will cause the Transformer and VAE components to run on the GPU, while the text_encoder will run on the CPU. We recommend that the generated image resolution be less than 768x768 in this mode.
 
     Generating images using Python scripts is cumbersome, so we often want a convenient web UI to control image generation.
     

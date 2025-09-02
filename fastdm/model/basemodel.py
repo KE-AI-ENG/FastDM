@@ -22,10 +22,10 @@ class BaseModelCore:
             weight_name = weights_name[0]
             if weight_name not in self.origin_tensor_dict.keys():
                 raise ValueError(f"The {weight_name} is not in origin_tensor_dict!!!")
-            
-            print(f"Loding weight: {weight_name}")
-
             src_tensor = self.origin_tensor_dict[weight_name]
+
+            print(f"Loding weight: {weight_name}, shape:{src_tensor.shape}")
+
             dst_tensor = src_tensor.to(self.device)
             del src_tensor
             self.unmatched_tensors.remove(weight_name)
@@ -40,14 +40,13 @@ class BaseModelCore:
                 b_name = f"{weight_name}.bias"
                 if w_name not in self.origin_tensor_dict.keys():
                     raise ValueError(f"The {w_name} is not in origin_tensor_dict!!!")
-                
-                print(f"Loding weight: {w_name}")
 
                 src_w = self.origin_tensor_dict[w_name]
                 src_b = self.origin_tensor_dict[b_name] if b_name in self.origin_tensor_dict.keys() else None
 
+                print(f"Loding weight: {w_name}, shape:{src_w.shape}")
                 if src_b is not None:
-                    print(f"Loding weight: {b_name}")
+                    print(f"Loding weight: {b_name}, shape:{src_b.shape}")
 
                 src_w_list.append(src_w.transpose(0,1)) #linear weights need (in_features, out_features) shape
                 src_b_list.append(src_b)

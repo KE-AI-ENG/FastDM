@@ -110,6 +110,9 @@ class FastDMEngine:
         else:
             images = self.pipe(prompt=prompt_text, image=src_image, num_inference_steps=inf_step, generator=gen, width=gen_width, height=gen_height, guidance_scale=guidance, max_sequence_length=max_len).images[0]
         
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         return images
 
 args = parseArgs()

@@ -90,6 +90,8 @@ def pipe_running(pipe, prompt_text, negative_prompts, dump_img_path=None, gen_se
             print(f"warmup {i+1}/{warmup} for image generation")
             images = pipe(prompt=prompt_text, num_inference_steps=inf_step, generator=gen, width=gen_width, height=gen_height, guidance_scale=guidance, max_sequence_length=max_len).images[0]
         torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        gc.collect()
 
     start_ = time.time()
     if video_gen:
@@ -218,6 +220,6 @@ if __name__ == "__main__":
     pipe_running(pipe, args.prompts, args.negative_prompts, args.output_path, args.seed, args.steps, args.width, args.height, args.num_warmup_runs, args.max_seq_len, args.guidance_scale, args.num_frames, args.fps, video_gen=video_gen_)
 
     print(f'mem-usage: {(torch.cuda.memory_allocated(torch.cuda.current_device()))/1024/1024/1024}GB')
-    #print(f'max mem-usage: {(torch.cuda.max_memory_allocated(torch.cuda.current_device()))/1024/1024/1024}GB')
+    print(f'max mem-usage: {(torch.cuda.max_memory_allocated(torch.cuda.current_device()))/1024/1024/1024}GB')
 
     #prof.export_chrome_trace("trace.json")

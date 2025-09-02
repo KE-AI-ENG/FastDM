@@ -2,7 +2,9 @@
 
 ### 简介
 
-Fast Diffusion Models(FASTDM): 是一个扩散模型推理工程，它支持主流文生图/视频模型结构，支持comfyui集成，支持多种GPU架构算力卡。
+Fast Diffusion Models(FASTDM): 是一个扩散模型推理工程，它支持主流文生图/视频模型结构，支持多种GPU架构算力卡，支持comfyui集成。
+
+FastDM对显存占用也进行了优化，较大的Qwen-Image系列模型，24GB显存的卡也可以跑通。
 
 工程整体结构如下：
 
@@ -60,28 +62,32 @@ torch 2.7 or later
 
 ### 使用
 
-examples包括Text2Image, LORA, Image-Editing, Controlnet等demo, 这些例程均基于diffusers的pipeline, 详情如下。
+examples包括Text2Image, LORA, Image-Editing, Controlnet等demo, 以下例程均基于diffusers的pipeline来运行。
 
-同时, FastDM也支持comfyUI集成，具体可参考[comfyui集成](./comfyui/README.md)
+当然, FastDM也支持comfyUI集成，具体可参考[Fastdm Comfyui集成文档](./comfyui/README.md)
 
 #### Text2Image:
 
-- diffusers pipeline中使用fastdm:
-    使用examples/demo文件夹下的gen.py脚本生成一张图片：
+使用examples/demo文件夹下的gen.py脚本生成一张图片：
 
-    `python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world"`
+`python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world"`
 
-    **注**: Qwen-Image模型通常需要五十多GB显存才可以运行，否则会OOM，可以配置`--qwen-oom-resolve`，使其只需26GB左右即可运行，这样A100-40G和4090，RTX-8000等48GB显存的卡就都可以运行。它会使Transformer与vae部分在gpu运行，text_encoder部分在cpu运行。
+##### Gradio-Server
 
-    使用python脚本生成图片较繁琐，通常我们想要一个方便快捷的网页UI来控制图片生成。
+上述使用python脚本生成图片较繁琐，通常我们想要一个方便快捷的网页UI来控制图片生成。
     
-    可以使用examples/serve文件夹下的gradio_launch.py脚本快速搭建一个web服务，这样就可以通过浏览器网页触发图片生成，可灵活修改prompts与生成参数。详情请参考[gradio服务demo](./examples/serve/readme.md)
+可以使用examples/serve文件夹下的gradio_launch.py脚本快速搭建一个web服务，这样就可以通过浏览器网页触发图片生成，可灵活修改prompts与生成参数。详情请参考[gradio服务demo](./examples/serve/readme.md)
 
-- comfyUI中使用fastdm:
+##### 小显存卡跑Qwen-Image(比如4090D)
 
-    请参考[Fastdm Comfyui使用文档](./comfyui//README.md)
-    
-    
+Qwen-Image模型通常需要五六十GB显存才可以运行，否则会OOM。可以配置`--qwen-oom-resolve`，使其只需20多GB显存即可运行，这样A100和4090/4090D，RTX-8000等小显存的卡就都可以支持。
+
+`python gen.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --output-path ./qwen-int8-tmp.png --qwen-oom-resolve --cache-config ../xcaching/configs/qwenimage.json --width 768 --height 768`
+
+**注**: 这种模式下生成图片尺寸建议小于768x768，否则vae部分也会占用很多显存，造成OOM。
+
+**注**: 当前FastDM跑Qwen-Image最小也需要20GB以上的显存，当前还不支持<20GB的卡跑，后面支持4bit权重量化之后应该可以在更低显存卡上跑Qwen-Image。
+
 #### LORA:
 
 社区中有很多lora模型带来了生成图片的真实性，多样性和丰富性。FastDM支持lora模型的加载和使用。
