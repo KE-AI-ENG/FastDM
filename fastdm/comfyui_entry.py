@@ -286,7 +286,12 @@ class ComfyUIFluxForwardWrapper(nn.Module):
     
     def forward(
         self, x, timestep, context, y, guidance, control=None, transformer_options={}, **kwargs
-    ):
+):
+        # get current step
+        all_steps_sigmas = transformer_options["sample_sigmas"]
+        current_steps_sigmas = transformer_options["sigmas"]
+        current_step = (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+
         # pre-process for input
         # ref https://github.com/comfyanonymous/ComfyUI/blob/3d2e3a6f29670809aa97b41505fa4e93ce11b98d/comfy/ldm/flux/model.py#L191
         bs, c, h, w = x.shape
@@ -303,18 +308,6 @@ class ComfyUIFluxForwardWrapper(nn.Module):
         img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs)
 
         txt_ids = torch.zeros((bs, context.shape[1], 3), device=x.device, dtype=x.dtype)
-
-        # comfyui forward input transfer to fastdm forward input
-        # img:hidden_states, context:encoder_hidden_states,y:pooled_projections
-        # output = self.model.forward(hidden_states=img, 
-        #                    encoder_hidden_states=context, 
-        #                    pooled_projections=y, 
-        #                    timestep=timestep, 
-        #                    img_ids=img_ids,
-        #                    txt_ids=txt_ids, 
-        #                    guidance=guidance,
-        #                    joint_attention_kwargs={},
-        #                    return_dict=False)
 
         # copy from fastdm flux.py, change controlnet sample for comfyui 
         hidden_states = img
@@ -366,23 +359,19 @@ class ComfyUIFluxForwardWrapper(nn.Module):
             inp = hidden_states.clone()
             temb_ = temb.clone()
             modulated_inp, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.model.transformer_blocks[0].norm1.forward(inp, emb=temb_)
-            if self.model.cnt == 0 or self.model.cnt == self.model.num_steps-1:
+            if current_step == 0:
                 should_calc = True
                 self.model.accumulated_rel_l1_distance = 0
             else: 
-                coefficients = [4.98651651e+02, -2.83781631e+02,  5.58554382e+01, -3.82021401e+00, 2.64230861e-01]
-                # coefficients = [-1.35544839e+06,  1.84926045e+05, -9.38363740e+03,  2.10319334e+02, -1.68447846e+00]
+                coefficients = self.model.cache_config.coefficients
                 rescale_func = np.poly1d(coefficients)
                 self.model.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.model.previous_modulated_input).abs().mean() / self.model.previous_modulated_input.abs().mean()).cpu().item())
-                if self.model.accumulated_rel_l1_distance < self.model.rel_l1_thresh:
+                if self.model.accumulated_rel_l1_distance < self.model.cache_config.threshold:
                     should_calc = False
                 else:
                     should_calc = True
                     self.model.accumulated_rel_l1_distance = 0
             self.model.previous_modulated_input = modulated_inp 
-            self.model.cnt += 1 
-            if self.model.cnt == self.model.num_steps:
-                self.model.cnt = 0 
 
         if self.model.enable_caching:
             if not should_calc:
@@ -573,6 +562,11 @@ class ComfyUISD35ForwardWrapper(nn.Module):
 
         height, width = hidden_states.shape[-2:]
         
+        # set current steps callback for fastdm cache
+        all_steps_sigmas = transformer_options["sample_sigmas"]
+        current_steps_sigmas = transformer_options["sigmas"]
+        self.model.cache_config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        
         output = self.model.forward(
             hidden_states=hidden_states,
             encoder_hidden_states=encoder_hidden_states,
@@ -639,6 +633,11 @@ class ComfyUIQwenImageForwardWrapper(nn.Module):
         hidden_states, img_ids, orig_shape, img_shapes = self.process_img(x)
         num_embeds = hidden_states.shape[1]
         txt_seq_lens = [context.shape[1]]
+
+        # set current steps callback for fastdm cache
+        all_steps_sigmas = transformer_options["sample_sigmas"]
+        current_steps_sigmas = transformer_options["sigmas"]
+        self.model.cache_config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
         
         output = self.model.forward(
             hidden_states=hidden_states,

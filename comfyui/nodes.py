@@ -21,6 +21,7 @@ from fastdm.comfyui_entry import (
     ComfyUIQwenImageForwardWrapper
 )
 from fastdm.kernel.utils import set_global_backend
+from fastdm.cache_config import CacheConfig
 
 QUANT_DTYPE_MAP = {
     "int8": torch.int8,
@@ -140,9 +141,8 @@ class FastdmFluxLoader:
                 "quant_dtype": (["fp8", "int8", "none"], {"default": "fp8"}),
                 "kernel_backend": (["torch", "cuda", "triton"], {"default": "cuda"}),
                 "in_channels": ([128, 64],),
-                "use_teacache": ("BOOLEAN", {"default": False}),
-                "teacache_thresh": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "steps": ("INT", {"default": 25, "min": 1, "max": 100, "step": 1}),
+                "use_cache": ("BOOLEAN", {"default": False}),
+                "cache_threshold": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
         }
 
@@ -157,23 +157,28 @@ class FastdmFluxLoader:
                    quant_dtype: str,
                    kernel_backend: str,
                    in_channels: int, 
-                   use_teacache: bool,
-                   teacache_thresh: float,
-                   steps: int,
+                   use_cache: bool,
+                   cache_threshold: float,
                    **kwargs):
         # Set the global backend for FastDM
         set_global_backend(kernel_backend)
 
         device = f"cuda:{device_id}"
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
+
+        # cache config
+        cache_config = CacheConfig(
+            enable_caching=use_cache,
+            threshold=cache_threshold,
+            coefficients=[4.98651651e+02, -2.83781631e+02,  5.58554382e+01, -3.82021401e+00, 2.64230861e-01],
+        )
+
         fastdm_core_model = FluxTransformer2DModelCore(in_channels=in_channels, 
                                                 out_channels=64, 
                                                 guidance_embeds=True, 
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                enable_caching=use_teacache,
-                                                teacache_thresh=teacache_thresh,
-                                                num_steps=steps)
+                                                cache_config=cache_config,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)
@@ -261,9 +266,8 @@ class FastdmSD35Loader:
                 ),
                 "quant_dtype": (["fp8", "int8", "none"], {"default": "fp8"}),
                 "kernel_backend": (["torch", "cuda", "triton"], {"default": "cuda"}),
-                "use_teacache": ("BOOLEAN", {"default": False}),
-                "teacache_thresh": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "steps": ("INT", {"default": 25, "min": 1, "max": 100, "step": 1}),
+                "use_cache": ("BOOLEAN", {"default": False}),
+                "cache_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
         }
 
@@ -277,21 +281,26 @@ class FastdmSD35Loader:
                    device_id: int,
                    quant_dtype: str,
                    kernel_backend: str,
-                   use_teacache: bool,
-                   teacache_thresh: float,
-                   steps: int,
+                   use_cache: bool,
+                   cache_threshold: float,
                    **kwargs):
         # Set the global backend for FastDM
         set_global_backend(kernel_backend)
 
         device = f"cuda:{device_id}"
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
+
+        # cache config
+        cache_config = CacheConfig(
+            enable_caching=use_cache,
+            threshold=cache_threshold,
+            coefficients=[ 5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01],
+        )
+
         fastdm_core_model = SD3TransformerModelCore(
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                enable_caching=use_teacache,
-                                                teacache_thresh=teacache_thresh,
-                                                num_steps=steps)
+                                                cache_config=cache_config,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)
@@ -322,11 +331,10 @@ class FastdmQwenImageLoader:
                     "INT",
                     {"default": 0, "min": 0, "max": len(GPUtil.getGPUs()), "step": 1, "display": "number", "lazy": True},
                 ),
-                "quant_dtype": (["fp8", "int8", "none"], {"default": "int8"}),
+                "quant_dtype": (["fp8", "int8", "none"], {"default": "fp8"}),
                 "kernel_backend": (["torch", "cuda", "triton"], {"default": "cuda"}),
-                "use_teacache": ("BOOLEAN", {"default": False}),
-                "teacache_thresh": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "steps": ("INT", {"default": 25, "min": 1, "max": 100, "step": 1}),
+                "use_cache": ("BOOLEAN", {"default": False}),
+                "cache_threshold": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
         }
 
@@ -340,22 +348,27 @@ class FastdmQwenImageLoader:
                     device_id: int,
                     quant_dtype: str,
                     kernel_backend: str,
-                    use_teacache: bool,
-                    teacache_thresh: float,
-                    steps: int,
+                    use_cache: bool,
+                    cache_threshold: float,
                     **kwargs):
         # Set the global backend for FastDM
         set_global_backend(kernel_backend)
 
         device = f"cuda:{device_id}"
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
+
+        # cache config
+        cache_config = CacheConfig(
+            enable_caching=use_cache,
+            threshold=cache_threshold,
+            coefficients=[20.04634615, 3.13881129, -11.25528647, 4.70808005, -0.15457715],
+            negtive_cache=True,
+            negtive_coefficients=[ -0.23545113,24.80886833, -19.46151587, 5.9431741, -0.20358595]
+        )
         fastdm_core_model = QwenImageTransformer2DModelCore(
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                enable_caching=use_teacache,
-                                                teacache_thresh=teacache_thresh,
-                                                num_steps=steps,
-                                                negtive_cache=True)
+                                                cache_config=cache_config,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)
