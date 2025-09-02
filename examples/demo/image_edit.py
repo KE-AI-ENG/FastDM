@@ -8,7 +8,7 @@ import torch
 from diffusers import DiffusionPipeline
 from diffusers.utils import load_image
 
-from fastdm.model_entry import QwenTransformerWrapper, FluxTransformerWrapper
+from fastdm.model_entry import create_model
 from fastdm.cache_config import CacheConfig
 
 def parseArgs():
@@ -78,8 +78,12 @@ if __name__ == "__main__":
         pass
     else:
         if is_qwen_img: #qwen image edit
-            pipe.transformer = QwenTransformerWrapper(pipe.transformer.state_dict(), quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config, need_resolve_oom=args.qwen_oom_resolve).eval()
+            pipe.transformer = create_model("qwen",
+                                            ckpt_path = pipe.transformer.state_dict(),
+                                            quant_type=quant_type, 
+                                            kernel_backend=args.kernel_backend,
+                                            cache_config=cache_config, 
+                                            need_resolve_oom=args.qwen_oom_resolve).eval()
             if args.qwen_oom_resolve:
                 import os
                 import sys
@@ -89,8 +93,11 @@ if __name__ == "__main__":
                 AutoencoderKLQwenImage._decode = qwen_vae_new_decode
                 AutoencoderKLQwenImage._encode = qwen_vae_new_encode
         else: #/FLUX.1-Kontext-dev
-            pipe.transformer = FluxTransformerWrapper(pipe.transformer.state_dict(), quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config).eval()
+            pipe.transformer = create_model("flux",
+                                            ckpt_path = pipe.transformer.state_dict(),
+                                            quant_type=quant_type, 
+                                            kernel_backend=args.kernel_backend,
+                                            cache_config=cache_config).eval()            
 
     if is_qwen_img and args.qwen_oom_resolve:
         pipe.vae.to("cuda")

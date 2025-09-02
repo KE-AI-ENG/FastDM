@@ -8,7 +8,7 @@ import gradio as gr
 import torch
 from diffusers import DiffusionPipeline
 
-from fastdm.model_entry import FluxTransformerWrapper, SD35TransformerWrapper, SDXLUNetModelWrapper, QwenTransformerWrapper
+from fastdm.model_entry import create_model
 from fastdm.cache_config import CacheConfig
 
 def parseArgs():
@@ -56,16 +56,33 @@ class FastDMEngine:
             cache_config = None
 
         if "sdxl" == architecture:
-           self.pipe.unet = SDXLUNetModelWrapper(self.pipe.unet.state_dict(), dtype=data_type, quant_type=quant_type, kernel_backend=kernel_backend).eval()
+           self.pipe.unet = create_model("sdxl",
+                                         ckpt_path = self.pipe.unet.state_dict(),
+                                         dtype=data_type, 
+                                         quant_type=quant_type, 
+                                         kernel_backend=kernel_backend).eval()
         elif "flux" == architecture:
-            self.pipe.transformer = FluxTransformerWrapper(self.pipe.transformer.state_dict(), dtype=data_type, quant_type=quant_type, kernel_backend=kernel_backend,
-                                                        cache_config=cache_config).eval()
+            self.pipe.transformer = create_model("flux",
+                                         ckpt_path = self.pipe.transformer.state_dict(),
+                                         dtype=data_type, 
+                                         quant_type=quant_type, 
+                                         kernel_backend=kernel_backend,
+                                         cache_config=cache_config).eval()
         elif "sd3" == architecture:
-            self.pipe.transformer = SD35TransformerWrapper(self.pipe.transformer.state_dict(), dtype=data_type, quant_type=quant_type, kernel_backend=kernel_backend,
-                                                        cache_config=cache_config).eval()
+            self.pipe.transformer = create_model("sd3",
+                                         ckpt_path = self.pipe.transformer.state_dict(),
+                                         dtype=data_type, 
+                                         quant_type=quant_type, 
+                                         kernel_backend=kernel_backend,
+                                         cache_config=cache_config).eval()
         elif "qwen" == architecture:
-            self.pipe.transformer = QwenTransformerWrapper(self.pipe.transformer.state_dict(), dtype=data_type, quant_type=quant_type, kernel_backend=kernel_backend,
-                                                      cache_config=cache_config, need_resolve_oom=qwen_oom_resolve).eval()
+            self.pipe.transformer = create_model("qwen",
+                                         ckpt_path = self.pipe.transformer.state_dict(),
+                                         dtype=data_type, 
+                                         quant_type=quant_type, 
+                                         kernel_backend=kernel_backend,
+                                         cache_config=cache_config,
+                                         need_resolve_oom=qwen_oom_resolve).eval()
             if qwen_oom_resolve:
                 import os
                 import sys

@@ -36,7 +36,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 from diffusers import DiffusionPipeline, WanPipeline, AutoencoderKLWan
 from diffusers.utils import export_to_video
 
-from fastdm.model_entry import FluxTransformerWrapper, SD35TransformerWrapper, SDXLUNetModelWrapper, QwenTransformerWrapper, WanTransformer3DWrapper
+from fastdm.model_entry import create_model
 from fastdm.cache_config import CacheConfig
 # import transformers
 # transformers.utils.move_cache()
@@ -147,16 +147,34 @@ if __name__ == "__main__":
         pass
     else:
         if "sdxl" == args.architecture:
-            pipe.unet = SDXLUNetModelWrapper(pipe.unet.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend).eval()
+            pipe.unet = create_model("sdxl", 
+                                     ckpt_path=pipe.unet.state_dict(), 
+                                     dtype=running_data_type, 
+                                     quant_type=quant_type, 
+                                     kernel_backend=args.kernel_backend).eval()
         elif "flux" == args.architecture:
-            pipe.transformer = FluxTransformerWrapper(pipe.transformer.state_dict(), dtype=running_data_type, in_channels=64, quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                    cache_config=cache_config).eval()
+            pipe.transformer = create_model("flux", 
+                                     ckpt_path=pipe.transformer.state_dict(), 
+                                     dtype=running_data_type, 
+                                     in_channels=64, 
+                                     quant_type=quant_type, 
+                                     kernel_backend=args.kernel_backend, 
+                                     cache_config=cache_config).eval()
         elif "sd3" == args.architecture:
-            pipe.transformer = SD35TransformerWrapper(pipe.transformer.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config).eval()
+            pipe.transformer = create_model("sd3", 
+                                     ckpt_path=pipe.transformer.state_dict(), 
+                                     dtype=running_data_type, 
+                                     quant_type=quant_type, 
+                                     kernel_backend=args.kernel_backend, 
+                                     cache_config=cache_config).eval()
         elif "qwen" == args.architecture:
-            pipe.transformer = QwenTransformerWrapper(pipe.transformer.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend,
-                                                      cache_config=cache_config, need_resolve_oom=args.qwen_oom_resolve).eval()
+            pipe.transformer = create_model("qwen", 
+                                     ckpt_path=pipe.transformer.state_dict(), 
+                                     dtype=running_data_type, 
+                                     quant_type=quant_type, 
+                                     kernel_backend=args.kernel_backend, 
+                                     cache_config=cache_config,
+                                     need_resolve_oom=args.qwen_oom_resolve).eval()
             if args.qwen_oom_resolve:
                 import os
                 import sys
@@ -166,11 +184,21 @@ if __name__ == "__main__":
                 AutoencoderKLQwenImage._decode = qwen_vae_new_decode
                 AutoencoderKLQwenImage._encode = qwen_vae_new_encode
         elif "wan" == args.architecture:
-            pipe.transformer = WanTransformer3DWrapper(pipe.transformer.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend, config_json=f"{args.model_path}/transformer/config.json",
-                                                    cache_config=cache_config).eval()
+            pipe.transformer = create_model("wan", 
+                            ckpt_path=pipe.transformer.state_dict(), 
+                            dtype=running_data_type, 
+                            quant_type=quant_type, 
+                            kernel_backend=args.kernel_backend, 
+                            config_json=f"{args.model_path}/transformer/config.json",
+                            cache_config=cache_config).eval()
             if hasattr(pipe, 'transformer_2') and pipe.transformer_2 is not None:
-                pipe.transformer_2 = WanTransformer3DWrapper(pipe.transformer_2.state_dict(), dtype=running_data_type, quant_type=quant_type, kernel_backend=args.kernel_backend, config_json=f"{args.model_path}/transformer_2/config.json",
-                                            cache_config=cache_config).eval()
+                pipe.transformer_2 = create_model("wan", 
+                                ckpt_path=pipe.transformer_2.state_dict(), 
+                                dtype=running_data_type, 
+                                quant_type=quant_type, 
+                                kernel_backend=args.kernel_backend, 
+                                config_json=f"{args.model_path}/transformer_2/config.json",
+                                cache_config=cache_config).eval()
         else:
             raise ValueError(
                 f"The {args.architecture} model is not supported!!!"
