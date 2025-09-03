@@ -10,7 +10,7 @@ from fastdm.model_entry import (
     FluxControlnetWrapper, FluxTransformerWrapper,
     SDXLControlnetModelWrapper, SDXLUNetModelWrapper
 )
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import BaseCache
 
 def preprocess_flux(image_path):
     """Flux: load raw image"""
@@ -53,17 +53,17 @@ def run_pipeline(
     # fastdm
     if transformer_wrapper:
         if args.cache_config is not None:
-            cache_config = CacheConfig.from_json(args.cache_config)
-            cache_config.current_steps_callback = lambda: pipe.scheduler.step_index
+            cache = BaseCache.from_json(args.cache_config)
+            cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
         else:
-            cache_config = None
+            cache = None
         pipe.transformer = transformer_wrapper(
             pipe.transformer.state_dict(),
             in_channels=64,
             quant_type=torch.float8_e4m3fn,
             dtype=args.dtype,
             kernel_backend="cuda",
-            cache_config=cache_config
+            cache=cache
         ).eval()
 
     if unet_wrapper:

@@ -37,7 +37,7 @@ from diffusers import DiffusionPipeline, WanPipeline, AutoencoderKLWan
 from diffusers.utils import export_to_video
 
 from fastdm.model_entry import create_model
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import BaseCache
 # import transformers
 # transformers.utils.move_cache()
 
@@ -139,11 +139,11 @@ if __name__ == "__main__":
     video_gen_ = args.architecture == "wan"
     
     #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-    if args.cache_config is not None:
-        cache_config = CacheConfig.from_json(args.cache_config)
-        cache_config.current_steps_callback = lambda: pipe.scheduler.step_index
+    if args.cache is not None:
+        cache = BaseCache.from_json(args.cache)
+        cache.current_steps_callback = lambda: pipe.scheduler.step_index
     else:
-        cache_config = None
+        cache = None
 
     if args.use_diffusers:
         pass
@@ -161,21 +161,21 @@ if __name__ == "__main__":
                                      in_channels=64, 
                                      quant_type=quant_type, 
                                      kernel_backend=args.kernel_backend, 
-                                     cache_config=cache_config).eval()
+                                     cache=cache).eval()
         elif "sd3" == args.architecture:
             pipe.transformer = create_model("sd3", 
                                      ckpt_path=pipe.transformer.state_dict(), 
                                      dtype=running_data_type, 
                                      quant_type=quant_type, 
                                      kernel_backend=args.kernel_backend, 
-                                     cache_config=cache_config).eval()
+                                     cache=cache).eval()
         elif "qwen" == args.architecture:
             pipe.transformer = create_model("qwen", 
                                      ckpt_path=pipe.transformer.state_dict(), 
                                      dtype=running_data_type, 
                                      quant_type=quant_type, 
                                      kernel_backend=args.kernel_backend, 
-                                     cache_config=cache_config,
+                                     cache=cache,
                                      need_resolve_oom=args.qwen_oom_resolve).eval()
             if args.qwen_oom_resolve:
                 import os
@@ -192,7 +192,7 @@ if __name__ == "__main__":
                             quant_type=quant_type, 
                             kernel_backend=args.kernel_backend, 
                             config_json=f"{args.model_path}/transformer/config.json",
-                            cache_config=cache_config).eval()
+                            cache=cache).eval()
             if hasattr(pipe, 'transformer_2') and pipe.transformer_2 is not None:
                 pipe.transformer_2 = create_model("wan", 
                                 ckpt_path=pipe.transformer_2.state_dict(), 
@@ -200,7 +200,7 @@ if __name__ == "__main__":
                                 quant_type=quant_type, 
                                 kernel_backend=args.kernel_backend, 
                                 config_json=f"{args.model_path}/transformer_2/config.json",
-                                cache_config=cache_config).eval()
+                                cache=cache).eval()
         else:
             raise ValueError(
                 f"The {args.architecture} model is not supported!!!"

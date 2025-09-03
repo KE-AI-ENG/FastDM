@@ -9,7 +9,7 @@ import torch
 from diffusers import DiffusionPipeline
 
 from fastdm.model_entry import create_model
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import BaseCache
 
 def parseArgs():
     parser = argparse.ArgumentParser(description="Options for FastDM Server", conflict_handler='resolve')
@@ -42,18 +42,18 @@ class FastDMEngine:
                  quant_type=torch.float8_e4m3fn, 
                  kernel_backend="cuda", 
                  architecture="flux", 
-                 cache_config=None,
+                 cache=None,
                  qwen_oom_resolve=False):
 
         torch.cuda.set_device(device_num)
 
         self.pipe = DiffusionPipeline.from_pretrained(model_path, torch_dtype=data_type, use_safetensors=True)
 
-        if cache_config is not None:
-            cache_config = CacheConfig.from_json(cache_config)
-            cache_config.current_steps_callback = lambda: self.pipe.scheduler.step_index
+        if cache is not None:
+            cache = BaseCache.from_json(cache)
+            cache.current_steps_callback = lambda: self.pipe.scheduler.step_index
         else:
-            cache_config = None
+            cache = None
 
         if "sdxl" == architecture:
            self.pipe.unet = create_model("sdxl",
@@ -67,21 +67,21 @@ class FastDMEngine:
                                          dtype=data_type, 
                                          quant_type=quant_type, 
                                          kernel_backend=kernel_backend,
-                                         cache_config=cache_config).eval()
+                                         cache=cache).eval()
         elif "sd3" == architecture:
             self.pipe.transformer = create_model("sd3",
                                          ckpt_path = self.pipe.transformer.state_dict(),
                                          dtype=data_type, 
                                          quant_type=quant_type, 
                                          kernel_backend=kernel_backend,
-                                         cache_config=cache_config).eval()
+                                         cache=cache).eval()
         elif "qwen" == architecture:
             self.pipe.transformer = create_model("qwen",
                                          ckpt_path = self.pipe.transformer.state_dict(),
                                          dtype=data_type, 
                                          quant_type=quant_type, 
                                          kernel_backend=kernel_backend,
-                                         cache_config=cache_config,
+                                         cache=cache,
                                          need_resolve_oom=qwen_oom_resolve).eval()
             if qwen_oom_resolve:
                 import os
@@ -123,7 +123,7 @@ engine_ = FastDMEngine(model_path=args.model_path,
                        quant_type=torch.float8_e4m3fn if args.use_fp8 else (torch.int8 if args.use_int8 else None),
                        kernel_backend=args.kernel_backend, 
                        architecture=args.architecture, 
-                       cache_config=args.cache_config,
+                       cache=args.cache,
                        qwen_oom_resolve=args.qwen_oom_resolve)
 
 # 定义图片生成函数
