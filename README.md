@@ -100,7 +100,7 @@ Qwen-Image模型通常需要五六十GB显存才可以运行，否则会OOM。�
 
 `python image_edit.py --model-path /path/to/Image-Edit-Model --use-int8 --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background."`
 
-与Text2Image类似, 也可以使用gradio_launch.py脚本搭建一个web服务来进行图片编辑，详情请参考[gradio服务demo](./examples/serve/readme.md)
+与Text2Image类似, 也可以使用gradio_launch.py脚本搭建一个web服务来进行图片编辑，畅玩类似**nano-banana**的多图编辑模式。详情请参考[gradio服务demo](./examples/serve/readme.md)
 
 ![image](./assets/img-edit.PNG)
 

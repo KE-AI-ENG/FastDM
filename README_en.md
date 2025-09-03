@@ -57,7 +57,7 @@ torch 2.7 or later
 
     Use the gen.py script in the examples/demo folder to generate an image (for more details, refer to introduction):
     
-    `python text2img_demo.py --num-warmup-runs 1 --dump-image-path ./flux-krea-fp8.png --use-fp8 --model-path /path/to/FLUX.1-Krea-dev --architecture flux --guidance-scale 4.5 --width 1024 --prompts "A frog holding a sign that says hello world"`
+    `python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world"`
 
     **Note**: The Qwen-Image model typically requires over 50GB of vram to run, otherwise it will cause an Out-of-Memory (OOM) error. By configuring `--qwen-oom-resolve`, it can be run with only around 20GB. This allows it to run on graphics cards with low VRam, such as the A100-40G, 4090/4090D, and RTX-8000. This will cause the Transformer and VAE components to run on the GPU, while the text_encoder will run on the CPU. We recommend that the generated image resolution be less than 768x768 in this mode.
 
@@ -80,6 +80,8 @@ Please refer to the [LORA](./examples//lora-gen/readme.md) documentation for det
 use the `image_edit.py` script in the `examples/demo` folder to edit an image:
 
 `python image_edit.py --model-path /path/to/Qwen-Image-Edit --use-int8 --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background."`
+
+Similar to Text2Image, you can also use the gradio_launch.py ​​script to build a web service for image editing, allowing you to enjoy multi-image editing similar to **nano-banana**. For more details, please refer to [gradio service demo](./examples/serve/readme.md) 
 
 #### Controlnet:
 
