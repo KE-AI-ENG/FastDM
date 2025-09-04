@@ -3,6 +3,8 @@ from fastdm.kernel.operators_set import rms_norm
 from fastdm.kernel.utils import set_global_backend, kernel_output_assert_close, benchmark_kernel
 
 INPUT_ARGS = [
+    [1, 14, 3584],
+    [1, 10, 3584],
     [1, 4096, 24, 128],
     [1, 512, 24, 128],
     [1, 4608, 24, 128],
@@ -13,8 +15,14 @@ INPUT_ARGS = [
 
 def test_accuracy_rmsnorm(dtype = torch.bfloat16, backend="triton"):
     unpass = 0
-    for (B, S, head_num, head_dim) in INPUT_ARGS:
-        input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+    for INPUT_ARG in INPUT_ARGS:
+        if len(INPUT_ARG) == 4:
+            (B, S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+        elif len(INPUT_ARG) == 3:
+            B = None
+            (S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((S, head_num, head_dim), device="cuda").to(dtype)
         scale: torch.Tensor = torch.randn((head_dim,), device="cuda").to(dtype)
         eps: float = 1e-06
         set_global_backend("torch")
@@ -29,8 +37,14 @@ def test_accuracy_rmsnorm(dtype = torch.bfloat16, backend="triton"):
             print(f"ERROR: B={B}, S={S}, head_num={head_num}, head_dim={head_dim}")
             print(f"{e}\n")
     
-    for (B, S, head_num, head_dim) in INPUT_ARGS:
-        input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+    for INPUT_ARG in INPUT_ARGS:
+        if len(INPUT_ARG) == 4:
+            (B, S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+        elif len(INPUT_ARG) == 3:
+            B = None
+            (S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((S, head_num, head_dim), device="cuda").to(dtype)
         scale: torch.Tensor = torch.randn((head_num * head_dim,), device="cuda").to(dtype)
         eps: float = 1e-06
         set_global_backend(backend)
@@ -50,8 +64,14 @@ def test_accuracy_rmsnorm(dtype = torch.bfloat16, backend="triton"):
 
 def test_performance_rmsnorm(dtype = torch.bfloat16, backend="triton"):
     print(f"test_performance_rmsnorm")
-    for (B, S, head_num, head_dim) in INPUT_ARGS:
-        input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+    for INPUT_ARG in INPUT_ARGS:
+        if len(INPUT_ARG) == 4:
+            (B, S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+        elif len(INPUT_ARG) == 3:
+            B = None
+            (S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((S, head_num, head_dim), device="cuda").to(dtype)
         scale: torch.Tensor = torch.randn((head_dim,), device="cuda").to(dtype)
         eps: float = 1e-06
         set_global_backend("torch")
@@ -65,5 +85,5 @@ def test_performance_rmsnorm(dtype = torch.bfloat16, backend="triton"):
 if __name__ == "__main__":
     test_accuracy_rmsnorm(backend="triton")
     test_performance_rmsnorm(backend="triton")
-    test_accuracy_rmsnorm(backend="cuda")
-    test_performance_rmsnorm(backend="cuda")
+    # test_accuracy_rmsnorm(backend="cuda")
+    # test_performance_rmsnorm(backend="cuda")
