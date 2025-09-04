@@ -69,7 +69,7 @@ class FastDMEngine:
                                          kernel_backend=kernel_backend,
                                          cache_config=cache_config).eval()
         elif "sd3" == architecture:
-            self.pipe.transformer = create_model("sd3",
+            self.pipe.transformer = create_model("sd35",
                                          ckpt_path = self.pipe.transformer.state_dict(),
                                          dtype=data_type, 
                                          quant_type=quant_type, 

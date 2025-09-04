@@ -10,7 +10,7 @@
 
 `python gradio_launch.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --device 0 --cache-config ../xcaching/configs/qwenimage.json --port 7890`
 
-对于Qwen-Image模型，配置`--qwen-oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768)。如果使用显存大于60GB的卡，不建议使能该选项。
+对于Qwen-Image模型，配置`--qwen-oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768), 小于24GB显存的卡上, 会触发更多部分的量化以进一步减少显存占用, 实测发现这会造成一些生成效果的影响。如果使用显存较大的卡，不建议使能该选项。
 
 server启动之后在浏览器中打开 http://localhost:7890 即可访问服务(如下图所示)。
 

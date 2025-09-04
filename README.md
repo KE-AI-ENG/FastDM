@@ -80,7 +80,7 @@ examples包括Text2Image, LORA, Image-Editing, Controlnet等demo, 以下例程�
 
 ##### 小显存卡跑Qwen-Image(比如4090D)
 
-Qwen-Image模型通常需要五六十GB显存才可以运行，否则会OOM。可以配置`--qwen-oom-resolve`，使其只需20多GB显存即可运行，这样A100和4090/4090D，RTX-8000等小显存的卡就都可以支持。
+Qwen-Image模型通常需要五六十GB显存才可以运行，否则会OOM。可以配置`--qwen-oom-resolve`，使其只需20多GB显存即可运行，这样A100和4090/4090D，RTX-8000等小显存的卡就都可以支持。注意该模式在<24GB显存卡上会量化更多部分，影响一些生成效果。
 
 `python gen.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --output-path ./qwen-int8-tmp.png --qwen-oom-resolve --cache-config ../xcaching/configs/qwenimage.json --width 768 --height 768`
 
