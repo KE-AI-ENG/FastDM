@@ -23,95 +23,73 @@ def is_cuda():
 def supports_host_descriptor():
     return is_cuda() and torch.cuda.get_device_capability()[0] >= 9
 
+def is_blackwell():
+    return is_cuda() and torch.cuda.get_device_capability()[0] == 10
+
+warp_specialize = True if is_blackwell() else False
+
 def is_hopper():
     return is_cuda() and torch.cuda.get_device_capability()[0] == 9
 
-warp_specialize_ = is_hopper()
 
 @triton.jit
-def _attn_fwd_inner(acc, l_i, m_i, q,  #
-                    desc_k, desc_v,  #
-                    offset_y, dtype: tl.constexpr, start_m, qk_scale,  #
-                    BLOCK_M: tl.constexpr, HEAD_DIM: tl.constexpr, BLOCK_N: tl.constexpr,  #
-                    STAGE: tl.constexpr, offs_m: tl.constexpr, offs_n: tl.constexpr,  #
-                    N_CTX: tl.constexpr, warp_specialize: tl.constexpr, IS_HOPPER: tl.constexpr):
-    # range of values handled by this stage
-    if STAGE == 1:
-        lo, hi = 0, start_m * BLOCK_M
-    elif STAGE == 2:
-        lo, hi = start_m * BLOCK_M, (start_m + 1) * BLOCK_M
-        lo = tl.multiple_of(lo, BLOCK_M)
-    # causal = False
-    else:
-        lo, hi = 0, N_CTX
-    offsetk_y = offset_y + lo
-    if dtype == tl.float8e5:
-        offsetv_y = offset_y * HEAD_DIM + lo
-    else:
-        offsetv_y = offset_y + lo
+def _attn_fwd_inner(acc, l_i, m_i, q,
+                    desc_k, desc_v,
+                    off_b, off_h, H, N_KV: tl.constexpr, N_Q: tl.constexpr,
+                    dtype: tl.constexpr, qk_scale,
+                    BLOCK_N_KV: tl.constexpr, BLOCK_N_Q: tl.constexpr,
+                    warp_specialize: tl.constexpr):
+    lo, hi = 0, N_KV
+    
+    kv_offs_y_b = H * N_KV
+    kv_offs_y_h = N_KV
+    offset_bh = off_b * kv_offs_y_b + off_h * kv_offs_y_h
     # loop over k, v and update accumulator
-    for start_n in tl.range(lo, hi, BLOCK_N, warp_specialize=warp_specialize):
-        start_n = tl.multiple_of(start_n, BLOCK_N)
+    for start_n_kv in tl.range(lo, hi, BLOCK_N_KV, warp_specialize=warp_specialize):
+        start_n_kv = tl.multiple_of(start_n_kv, BLOCK_N_KV)
         # -- compute qk ----
-        k = desc_k.load([offsetk_y, 0]).T
+        kv_offset_y = offset_bh + start_n_kv
+        k = desc_k.load([kv_offset_y, 0]).T
+        v = desc_v.load([kv_offset_y, 0])
         qk = tl.dot(q, k)
-        if STAGE == 2:
-            mask = offs_m[:, None] >= (start_n + offs_n[None, :])
-            qk = qk * qk_scale + tl.where(mask, 0, -1.0e6)
-            m_ij = tl.maximum(m_i, tl.max(qk, 1))
-            qk -= m_ij[:, None]
-        else:
-            m_ij = tl.maximum(m_i, tl.max(qk, 1) * qk_scale)
-            qk = qk * qk_scale - m_ij[:, None]
-        p = tl.math.exp2(qk)
+        qk_s = qk * qk_scale
+        if start_n_kv+BLOCK_N_KV >= hi: # need mask
+            mask_qk = (tl.arange(0, BLOCK_N_Q)[:, None] < N_Q) & ((start_n_kv + tl.arange(0, BLOCK_N_KV))[None, :] < hi)
+            qk_s = tl.where(mask_qk, qk_s, -float("inf"))
+        m_ij = tl.maximum(m_i, tl.max(qk_s, 1))
+        qk_s = qk_s - m_ij[:, None]
+        p = tl.math.exp(qk_s)               # exp(s_2 - m_2)
         # -- compute correction factor
-        alpha = tl.math.exp2(m_i - m_ij)
-        l_ij = tl.sum(p, 1)
+        alpha = tl.math.exp(m_i - m_ij)     # exp(m_1 - m_2)
+        l_ij = tl.sum(p, 1)                 # rowsum(exp(s_2 - m_2)) 
         # -- update output accumulator --
-        if not IS_HOPPER and warp_specialize and BLOCK_M == 128 and HEAD_DIM == 128:
-            BM: tl.constexpr = acc.shape[0]
-            BN: tl.constexpr = acc.shape[1]
-            acc0, acc1 = acc.reshape([BM, 2, BN // 2]).permute(0, 2, 1).split()
-            acc0 = acc0 * alpha[:, None]
-            acc1 = acc1 * alpha[:, None]
-            acc = tl.join(acc0, acc1).permute(0, 2, 1).reshape([BM, BN])
-        else:
-            acc = acc * alpha[:, None]
-        # prepare p and v for the dot
-        if dtype == tl.float8e5:
-            v = desc_v.load([0, offsetv_y]).T
-        else:
-            v = desc_v.load([offsetv_y, 0])
+        acc = acc * alpha[:, None]          # exp(m_1 - m_2)*O_1~
+        # -- prepare p and v for the dot
         p = p.to(dtype)
-        # note that this non transposed v for FP8 is only supported on Blackwell
-        acc = tl.dot(p, v, acc)
-        # update m_i and l_i
-        # place this at the end of the loop to reduce register pressure
+        acc = tl.dot(p, v, acc)             # exp(m_1 - m_2)*O_1~ + exp(m_1 - m_2)@V
+        # -- update m_i and l_i
         l_i = l_i * alpha + l_ij
         m_i = m_ij
-        offsetk_y += BLOCK_N
-        offsetv_y += BLOCK_N
+
     return acc, l_i, m_i
 
 
 def _host_descriptor_pre_hook(nargs):
-    BLOCK_M = nargs["BLOCK_M"]
-    BLOCK_N = nargs["BLOCK_N"]
+    BLOCK_N_Q = nargs["BLOCK_N_Q"]
+    BLOCK_N_KV = nargs["BLOCK_N_KV"]
     HEAD_DIM = nargs["HEAD_DIM"]
     if not isinstance(nargs["desc_q"], TensorDescriptor):
         return
-    nargs["desc_q"].block_shape = [BLOCK_M, HEAD_DIM]
-    if nargs["FP8_OUTPUT"]:
-        nargs["desc_v"].block_shape = [HEAD_DIM, BLOCK_N]
-    else:
-        nargs["desc_v"].block_shape = [BLOCK_N, HEAD_DIM]
-    nargs["desc_k"].block_shape = [BLOCK_N, HEAD_DIM]
-    nargs["desc_o"].block_shape = [BLOCK_M, HEAD_DIM]
+    nargs["desc_q"].block_shape = [BLOCK_N_Q, HEAD_DIM]
+    nargs["desc_v"].block_shape = [BLOCK_N_KV, HEAD_DIM]
+    nargs["desc_k"].block_shape = [BLOCK_N_KV, HEAD_DIM]
+    nargs["desc_o"].block_shape = [BLOCK_N_Q, HEAD_DIM]
 
 NUM_STAGES_OPTIONS = [2, 3, 4]
 
 configs = [
-    triton.Config({'BLOCK_M': BM, 'BLOCK_N': BN}, num_stages=s, num_warps=w, pre_hook=_host_descriptor_pre_hook) \
+    # triton.Config(dict(BLOCK_N_Q=64, BLOCK_N_KV=32), num_stages=2, num_warps=4, pre_hook=_host_descriptor_pre_hook)
+    triton.Config({'BLOCK_N_Q': BM, 'BLOCK_N_KV': BN}, num_stages=s, num_warps=w, pre_hook=_host_descriptor_pre_hook) \
     for BM in [64, 128]\
     for BN in [32, 64, 128]\
     for s in NUM_STAGES_OPTIONS \
@@ -120,22 +98,22 @@ configs = [
 if "PYTEST_VERSION" in os.environ:
     # Use a single config in testing for reproducibility
     configs = [
-        triton.Config(dict(BLOCK_M=128, BLOCK_N=64), num_stages=2, num_warps=4, pre_hook=_host_descriptor_pre_hook),
+        triton.Config(dict(BLOCK_N_Q=128, BLOCK_N_KV=64), num_stages=2, num_warps=4, pre_hook=_host_descriptor_pre_hook),
     ]
 
 
 def keep(conf):
-    BLOCK_M = conf.kwargs["BLOCK_M"]
-    BLOCK_N = conf.kwargs["BLOCK_N"]
-    return not (is_cuda() and torch.cuda.get_device_capability()[0] == 9 and BLOCK_M * BLOCK_N < 128 * 128
+    BLOCK_N_Q = conf.kwargs["BLOCK_N_Q"]
+    BLOCK_N_KV = conf.kwargs["BLOCK_N_KV"]
+    return not (is_cuda() and torch.cuda.get_device_capability()[0] == 9 and BLOCK_N_Q * BLOCK_N_KV < 128 * 128
                 and conf.num_warps == 8)
 
 
 def prune_invalid_configs(configs, named_args, **kwargs):
-    N_CTX = kwargs["N_CTX"]
+    N_Q = kwargs["N_Q"]
 
-    # Filter out configs where BLOCK_M > N_CTX
-    return [conf for conf in configs if conf.kwargs.get("BLOCK_M", 0) <= N_CTX]
+    # Filter out configs where BLOCK_N_Q > N_Q
+    return [conf for conf in configs if conf.kwargs.get("BLOCK_N_Q", 0) <= N_Q]
 
 
 @triton.jit
@@ -146,78 +124,66 @@ def _maybe_make_tensor_desc(desc_or_ptr, shape, strides, block_shape):
         return tl.make_tensor_descriptor(desc_or_ptr, shape, strides, block_shape)
 
 
-@triton.autotune(configs=list(filter(keep, configs)), key=["N_CTX", "HEAD_DIM", "FP8_OUTPUT", "warp_specialize"],
-                 prune_configs_by={'early_config_prune': prune_invalid_configs})
+@triton.autotune(
+                configs=list(filter(keep, configs)), 
+                # configs=configs, 
+                key=["N_Q", "HEAD_DIM", "warp_specialize"],
+                prune_configs_by={'early_config_prune': prune_invalid_configs}
+                )
 @triton.jit
-def _attn_fwd(sm_scale, M,  #
-              Z, H, desc_q, desc_k, desc_v, desc_o, N_CTX,  #
-              HEAD_DIM: tl.constexpr,  #
-              BLOCK_M: tl.constexpr,  #
-              BLOCK_N: tl.constexpr,  #
-              FP8_OUTPUT: tl.constexpr,  #
-              STAGE: tl.constexpr,  #
-              warp_specialize: tl.constexpr,  #
-              IS_HOPPER: tl.constexpr,  #
+def _attn_fwd(sm_scale,
+              B, H, 
+              desc_q, desc_k, desc_v, desc_o, 
+              N_Q, N_KV, 
+              HEAD_DIM: tl.constexpr,
+              warp_specialize: tl.constexpr,
+              BLOCK_N_Q: tl.constexpr, 
+              BLOCK_N_KV: tl.constexpr,
               ):
-    data_type = tl.float8e5 if FP8_OUTPUT else tl.bfloat16
-    tl.static_assert(BLOCK_N <= HEAD_DIM)
-    start_m = tl.program_id(0)
-    off_hz = tl.program_id(1)
-    off_z = off_hz // H
-    off_h = off_hz % H
+    dtype = tl.bfloat16 
+    tl.static_assert(BLOCK_N_KV <= HEAD_DIM)
 
-    y_dim = Z * H * N_CTX
-    desc_q = _maybe_make_tensor_desc(desc_q, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
-                                     block_shape=[BLOCK_M, HEAD_DIM])
-    if FP8_OUTPUT:
-        desc_v = _maybe_make_tensor_desc(desc_v, shape=[HEAD_DIM, y_dim], strides=[N_CTX, 1],
-                                         block_shape=[HEAD_DIM, BLOCK_N])
-    else:
-        desc_v = _maybe_make_tensor_desc(desc_v, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
-                                         block_shape=[BLOCK_N, HEAD_DIM])
-    desc_k = _maybe_make_tensor_desc(desc_k, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
-                                     block_shape=[BLOCK_N, HEAD_DIM])
-    desc_o = _maybe_make_tensor_desc(desc_o, shape=[y_dim, HEAD_DIM], strides=[HEAD_DIM, 1],
-                                     block_shape=[BLOCK_M, HEAD_DIM])
+    qo_y_size = B * H * N_Q
+    kv_y_size = B * H * N_KV
+    desc_q = _maybe_make_tensor_desc(desc_q, shape=[qo_y_size, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_N_Q, HEAD_DIM])
+    desc_k = _maybe_make_tensor_desc(desc_k, shape=[kv_y_size, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_N_KV, HEAD_DIM])
+    desc_v = _maybe_make_tensor_desc(desc_v, shape=[kv_y_size, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_N_KV, HEAD_DIM])
+    desc_o = _maybe_make_tensor_desc(desc_o, shape=[qo_y_size, HEAD_DIM], strides=[HEAD_DIM, 1],
+                                     block_shape=[BLOCK_N_Q, HEAD_DIM])
 
-    offset_y = off_z * (N_CTX * H) + off_h * N_CTX
-    qo_offset_y = offset_y + start_m * BLOCK_M
-    # initialize offsets
-    offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    offs_n = tl.arange(0, BLOCK_N)
+    # load q: it will stay in SRAM throughout
+    start_bh = tl.program_id(0)
+    start_n_q = tl.program_id(1)
+    off_b = start_bh // H
+    off_h = start_bh % H
+    qo_offs_y_b = H * N_Q
+    qo_offs_y_h = N_Q
+    offset_bh = off_b * qo_offs_y_b + off_h * qo_offs_y_h
+    qo_offset_y = offset_bh + start_n_q * BLOCK_N_Q
+    q = desc_q.load([qo_offset_y, 0])
+
     # initialize pointer to m and l
-    m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-    l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
-    acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
+    m_i = tl.zeros([BLOCK_N_Q], dtype=tl.float32) - float("inf")
+    l_i = tl.zeros([BLOCK_N_Q], dtype=tl.float32)
+    acc = tl.zeros([BLOCK_N_Q, HEAD_DIM], dtype=tl.float32)
     # load scales
     qk_scale = sm_scale
-    qk_scale *= 1.44269504  # 1/log(2)
-    # load q: it will stay in SRAM throughout
-    q = desc_q.load([qo_offset_y, 0])
-    # stage 1: off-band
-    # For causal = True, STAGE = 3 and _attn_fwd_inner gets 1 as its STAGE
-    # For causal = False, STAGE = 1, and _attn_fwd_inner gets 3 as its STAGE
-    if STAGE & 1:
-        acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,  #
-                                        desc_k, desc_v,  #
-                                        offset_y, data_type, start_m, qk_scale,  #
-                                        BLOCK_M, HEAD_DIM, BLOCK_N,  #
-                                        4 - STAGE, offs_m, offs_n, N_CTX,  #
-                                        warp_specialize, IS_HOPPER)
-    # stage 2: on-band
-    if STAGE & 2:
-        acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,  #
-                                        desc_k, desc_v,  #
-                                        offset_y, data_type, start_m, qk_scale,  #
-                                        BLOCK_M, HEAD_DIM, BLOCK_N,  #
-                                        2, offs_m, offs_n, N_CTX,  #
-                                        warp_specialize, IS_HOPPER)
+
+    acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,
+                                    desc_k, desc_v,
+                                    off_b, off_h, H, N_KV, N_Q,
+                                    dtype, qk_scale,
+                                    BLOCK_N_KV, BLOCK_N_Q,
+                                    warp_specialize)
+
     # epilogue
-    m_i += tl.math.log2(l_i)
+    m_i += tl.math.log(l_i)
     acc = acc / l_i[:, None]
-    m_ptrs = M + off_hz * N_CTX + offs_m
-    tl.store(m_ptrs, m_i)
-    desc_o.store([qo_offset_y, 0], acc.to(data_type))
+    desc_o.store([qo_offset_y, 0], acc.to(dtype))
+
     
 @kernel_registry.register('sdpa', 'triton')
 def sdpa_triton(
@@ -246,52 +212,34 @@ def sdpa_triton(
     Returns:
         torch.Tensor: The output tensor after applying attention.
     """
-
-    #although the triton-kernel supports fp8-e5m2, but the precision is not good enough for some models, so we disable it by default.
-    fp8_attn_ = False
-
     b, t, c = query.size()
     q = query.view(query.size(0), query.size(1), num_q_heads, head_dim).transpose(1, 2).contiguous()
     k = key.view(key.size(0), key.size(1), num_kv_heads, head_dim).transpose(1, 2).contiguous()
     v = value.view(value.size(0), value.size(1), num_kv_heads, head_dim).transpose(1, 2).contiguous()
 
-    if q.dtype==torch.float16:
-        q = q.to(torch.bfloat16)
-        k = k.to(torch.bfloat16)
-        v = v.to(torch.bfloat16)
-
-    if fp8_attn_:
-        q = q.to(torch.float8_e5m2)
-        k = k.to(torch.float8_e5m2)
-        v = v.permute(0, 1, 3, 2).contiguous()
-        v = v.permute(0, 1, 3, 2)
-        v = v.to(torch.float8_e5m2)
-
     # shape constraints
-    HEAD_DIM_Q, HEAD_DIM_K = q.shape[-1], k.shape[-1]
-    # when v is in float8_e5m2 it is transposed.
-    HEAD_DIM_V = v.shape[-1]
-    assert HEAD_DIM_Q == HEAD_DIM_K and HEAD_DIM_K == HEAD_DIM_V
-    assert HEAD_DIM_K in {16, 32, 64, 128, 256}
+    assert q.shape[1] == v.shape[1] and q.shape[1] == v.shape[1]        # assert num_heads, only support MHA now
+    assert k.shape[2] == v.shape[2] # assert seq_len_kv
+    assert q.shape[-1] == k.shape[-1] and q.shape[-1] == v.shape[-1]    # assert head_dim
+    assert q.shape[-1] in {16, 32, 64, 128, 256}
+    batch_size = q.shape[0]
+    num_head_q = q.shape[1]
+    num_head_kv = k.shape[1]
+    seq_len_q = q.shape[2]
+    seq_len_kv = k.shape[2]
+
     o = torch.empty_like(q)
     stage = 3 if is_causal else 1
     extra_kern_args = {}
-    M = torch.empty((q.shape[0], q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
-    # Use device_descriptor for Hopper + warpspec.
-    if supports_host_descriptor() and not (is_hopper() and warp_specialize_):
-        # Note that on Hopper we cannot perform a FP8 dot with a non-transposed second tensor
-        y_dim = q.shape[0] * q.shape[1] * q.shape[2]
 
+    # Use device_descriptor for Hopper + warpspec.
+    if supports_host_descriptor() and not (is_hopper() and warp_specialize):
+        # Note that on Hopper we cannot perform a FP8 dot with a non-transposed second tensor
         dummy_block = [1, 1]
-        desc_q = TensorDescriptor(q, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
-        if q.dtype == torch.float8_e5m2:
-            desc_v = TensorDescriptor(v, shape=[HEAD_DIM_K, y_dim], strides=[q.shape[2], 1],
-                                        block_shape=dummy_block)
-        else:
-            desc_v = TensorDescriptor(v, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1],
-                                        block_shape=dummy_block)
-        desc_k = TensorDescriptor(k, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
-        desc_o = TensorDescriptor(o, shape=[y_dim, HEAD_DIM_K], strides=[HEAD_DIM_K, 1], block_shape=dummy_block)
+        desc_q = TensorDescriptor(q, shape=[batch_size*num_head_q*seq_len_q, head_dim], strides=[head_dim, 1], block_shape=dummy_block)
+        desc_v = TensorDescriptor(v, shape=[batch_size*num_head_kv*seq_len_kv, head_dim], strides=[head_dim, 1], block_shape=dummy_block)
+        desc_k = TensorDescriptor(k, shape=[batch_size*num_head_kv*seq_len_kv, head_dim], strides=[head_dim, 1], block_shape=dummy_block)
+        desc_o = TensorDescriptor(o, shape=[batch_size*num_head_q*seq_len_q, head_dim], strides=[head_dim, 1], block_shape=dummy_block)
     else:
         desc_q = q
         desc_v = v
@@ -304,23 +252,21 @@ def sdpa_triton(
     triton.set_allocator(alloc_fn)
 
     def grid(META):
-        return (triton.cdiv(q.shape[2], META["BLOCK_M"]), q.shape[0] * q.shape[1], 1)
+        return (batch_size*num_head_q, triton.cdiv(seq_len_q, META["BLOCK_N_Q"]))
+
+    if is_blackwell() and warp_specialize:
+        if head_dim == 128 and q.dtype == torch.float16:
+            extra_kern_args["maxnreg"] = 168
+        else:
+            extra_kern_args["maxnreg"] = 80
 
     _attn_fwd[grid](
-        scale, M,  #
-        q.shape[0], q.shape[1],  #
-        desc_q, desc_k, desc_v, desc_o,  #
-        N_CTX=q.shape[2],  #
-        HEAD_DIM=HEAD_DIM_K,  #
-        FP8_OUTPUT=q.dtype == torch.float8_e5m2,  #
-        STAGE=stage,  #
-        warp_specialize=warp_specialize_,  #
-        IS_HOPPER=is_hopper(),  #
+        scale, 
+        batch_size, num_head_q,
+        desc_q, desc_k, desc_v, desc_o,
+        N_Q=seq_len_q, N_KV = seq_len_kv, HEAD_DIM=head_dim,
+        warp_specialize=warp_specialize,
         **extra_kern_args)
 
     attn_output = o.transpose(1, 2).contiguous().view(b, t, c)
-
-    if query.dtype == torch.float16 or fp8_attn_:
-        attn_output = attn_output.to(query.dtype)
-
     return attn_output
