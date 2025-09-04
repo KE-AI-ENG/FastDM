@@ -341,6 +341,7 @@ class SD3TransformerModelCore(BaseModelCore):
         timestep: torch.LongTensor = None,
         block_controlnet_hidden_states: List = None,
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        return_dict: bool = True,
     ):
         """
         The [`SD3TransformerModelCore`] forward method.

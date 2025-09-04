@@ -261,7 +261,7 @@ class SDXLUNetModelWrapper(BaseModelWrapper):
         """Initialize core model"""
         self.core_model = SDXLUNetModelCore(
             in_channels=self.config.in_channels,
-            is_ip_adapter=self.config.is_ipadapter, 
+            is_ip_adapter=self.config.ip_adapter, 
             ip_adapter_scale=ipadapter_scale,
             diffu_ipadapter_encoder_hid_proj = diffu_ipadapter_encoder_hid_proj, 
             data_type=self.config.dtype,
@@ -269,6 +269,9 @@ class SDXLUNetModelWrapper(BaseModelWrapper):
             **kwargs
         )
         
+        self.add_embedding = self.core_model.add_embedding
+        self.encoder_hid_proj = self.core_model.encoder_hid_proj
+
         if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):
             self.core_model.weight_loading(ckpt_path)
 

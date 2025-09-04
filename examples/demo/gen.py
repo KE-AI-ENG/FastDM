@@ -163,7 +163,7 @@ if __name__ == "__main__":
                                      kernel_backend=args.kernel_backend, 
                                      cache_config=cache_config).eval()
         elif "sd3" == args.architecture:
-            pipe.transformer = create_model("sd3", 
+            pipe.transformer = create_model("sd35", 
                                      ckpt_path=pipe.transformer.state_dict(), 
                                      dtype=running_data_type, 
                                      quant_type=quant_type, 
