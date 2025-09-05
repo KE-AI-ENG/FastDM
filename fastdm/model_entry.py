@@ -370,12 +370,14 @@ class FluxControlnetWrapper(BaseModelWrapper):
     ):
         super().__init__(kernel_backend)
         
+        # diffusers compatibility
         self.config = self._create_diffusers_config(
             in_channels=in_channels,
             out_channels=out_channels,
             guidance_embeds=True,
             dtype=dtype
         )
+        self.input_hint_block = None
         
         self.dtype = dtype
         self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
@@ -388,7 +390,6 @@ class FluxControlnetWrapper(BaseModelWrapper):
             guidance_embeds=self.config.guidance_embeds, 
             data_type=self.config.dtype,
             quant_dtype=quant_type,
-            cache=cache,
             **kwargs
         )
         
