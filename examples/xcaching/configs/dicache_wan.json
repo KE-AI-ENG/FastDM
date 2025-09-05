@@ -1,0 +1,8 @@
+{
+    "cache_algorithm": "dicache",
+    "enable_caching": true,
+    "threshold": 0.1,
+    "probe_depteh": 1,
+    "ret_ratio": 0.2,
+    "negtive_cache": true
+}

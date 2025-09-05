@@ -9,7 +9,7 @@ from diffusers import DiffusionPipeline
 from diffusers.utils import load_image
 
 from fastdm.model_entry import create_model
-from fastdm.caching.xcaching import BaseCache
+from fastdm.caching.xcaching import AutoCache
 
 def parseArgs():
     parser = argparse.ArgumentParser(description="Options for Diffusion model Image Edit Demo", conflict_handler='resolve')
@@ -68,9 +68,10 @@ if __name__ == "__main__":
     src_image = load_image(args.image_path)
     
     #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-    if args.cache is not None:
-        cache = BaseCache.from_json(args.cache)
-        cache.current_steps_callback = lambda: pipe.scheduler.step_index
+    if args.cache_config is not None:
+        cache = AutoCache.from_json(args.cache_config)
+        cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
+        cache.config.total_steps_callback = lambda: pipe.scheduler.timesteps.shape[0] # used by dicache
     else:
         cache = None
 

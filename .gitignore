@@ -16,3 +16,4 @@ release-dist
 *.tar.gz
 *.log
 *.pem
+*.sh

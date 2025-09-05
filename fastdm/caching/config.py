@@ -10,7 +10,7 @@ class CacheConfig:
     # common args
     cache_algorithm : str
     enable_caching: bool = False
-    threshold: float = 0.25
+    threshold: float = 0.2
     current_steps_callback: Optional[callable] = None
     total_steps_callback: Optional[callable] = None
     negtive_cache: Optional[bool] = False # qwenimage/wan will excute the forward separately in one step for prompt and negative prompt. 
@@ -69,5 +69,5 @@ class DiCacheConfig(CacheConfig):
 @CacheConfig.register("fbcache")
 @dataclass
 class FBCacheConfig(CacheConfig):
-    pass
+    warmup_steps: int = 6
 

@@ -45,14 +45,26 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
 
 ### caching加速
 
-除量化外，对于DIT模型我们还支持了cache加速机制，目前支持了[teacache](https://github.com/ali-vilab/TeaCache)和[FBcache](https://github.com/chengzeyi/ParaAttention?tab=readme-ov-file#first-block-cache-our-dynamic-caching)两种cache算法，在examples/demo的gen.py通过参数`--cache-config`配置。例：
+除量化外，对于DIT模型我们还支持了cache加速机制，目前支持了[teacache](https://github.com/ali-vilab/TeaCache)、[FBcache](https://github.com/chengzeyi/ParaAttention?tab=readme-ov-file#first-block-cache-our-dynamic-caching)、[DiCache](https://github.com/Bujiazi/DiCache)等三种cache算法。
+
+- 流程图：
+![image](../assets/cache.PNG)
+参数通过cache-config配置文件传入，具体参数参考[cache config demo](../examples/xcaching/configs)
+
+- 最佳实践：
+
+flux：推荐Dicache, [config](../examples/xcaching/configs/dicache_flux.json);
+qwenimage/sd35: 推荐teacache, [config](../examples/xcaching/configs/teacache_qwenimage.json);
+wan2.2-t2v: 推荐fbcache, [config](../examples/xcaching/configs/fbcache_wan.json);
+
+目前teacache的所用的拟合参数coefficients是采用提前算好的默认值，我们还提供了coefficients拟合计算脚本，如果有需要可以通过脚本(位于examples/xcaching目录下)重新计算。
+
+- 使用示例：
+在examples/demo的gen.py通过参数`--cache-config`配置。例：
 ```
 python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world" --cache-config ../xcaching/configs/flux.json
 ```
 
-其中wan2.2采用FBcache，其他模型采用teacache.teacache具体原理可以参考其[paper](https://huggingface.co/papers/2411.19108)
-
-目前teacache的所用的拟合参数coefficients是采用提前算好的默认值，我们还提供了coefficients拟合计算脚本，如果有需要可以通过脚本(位于examples/xcaching目录下)重新计算。
 
 ### 模型结构
 

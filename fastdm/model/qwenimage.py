@@ -216,8 +216,8 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         
         for i in range(len(self.transformer_blocks)):
             #others
-            self.init_weight([f"transformer_blocks.{i}.img_mod.1"], self.transformer_blocks[i].img_mod_proj, self.quant_dtype)
-            self.init_weight([f"transformer_blocks.{i}.txt_mod.1"], self.transformer_blocks[i].txt_mod_proj, self.quant_dtype)
+            self.init_weight([f"transformer_blocks.{i}.img_mod.1"], self.transformer_blocks[i].img_mod_proj, self.quant_dtype if self.need_resolve_oom else None)
+            self.init_weight([f"transformer_blocks.{i}.txt_mod.1"], self.transformer_blocks[i].txt_mod_proj, self.quant_dtype if self.need_resolve_oom else None)
 
             #attention
             self.transformer_blocks[i].attn.norm_q_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_q.weight"])

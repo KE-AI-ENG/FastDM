@@ -74,7 +74,8 @@ class BaseModelWrapper(nn.Module, ConfigMixin):
             print(f"Exception in cache context '{name}': {type(e).__name__}: {e}")
             raise
         finally:
-            print(f"Exiting cache context: {name}")
+            # print(f"Exiting cache context: {name}")
+            pass
     
     def to(self, *args, **kwargs):
         """Overrides the default `to` method to ensure that all submodules are moved to the correct device and dtype."""
@@ -410,10 +411,8 @@ class WanTransformer3DWrapper(BaseModelWrapper):
         super().__init__(kernel_backend, config_path=config_json)
         
         self.config = self._create_diffusers_config(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            ip_adapter=False,
-            global_pool_conditions=False,
+            in_channels=self.model_config_dict['in_channels'],
+            out_channels=self.model_config_dict['out_channels'],
             dtype=dtype
         )
         
@@ -423,14 +422,21 @@ class WanTransformer3DWrapper(BaseModelWrapper):
     def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = WanTransformer3DModelCore(
-            in_channels=self.config.in_channels, 
-            out_channels=self.config.out_channels,
-            ip_adapter=self.config.ip_adapter,
-            global_pool_conditions=self.config.global_pool_conditions,
-            data_type=self.config.dtype,
-            quant_dtype=quant_type,
-            cache=cache,
-            **kwargs
+                patch_size = self.model_config_dict['patch_size'],
+                num_attention_heads = self.model_config_dict['num_attention_heads'],
+                attention_head_dim = self.model_config_dict['attention_head_dim'],
+                in_channels = self.model_config_dict['in_channels'],
+                out_channels = self.model_config_dict['out_channels'],
+                text_dim = self.model_config_dict['text_dim'],
+                freq_dim = self.model_config_dict['freq_dim'],
+                ffn_dim = self.model_config_dict['ffn_dim'],
+                num_layers = self.model_config_dict['num_layers'],
+                qk_norm = self.model_config_dict['qk_norm'],
+                eps = self.model_config_dict['eps'],
+                rope_max_seq_len = self.model_config_dict['rope_max_seq_len'],
+                data_type=self.config.dtype, 
+                quant_dtype=quant_type,
+                cache=cache
         )
         
         if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):

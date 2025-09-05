@@ -328,7 +328,7 @@ class WanTransformer3DModelCore(BaseModelCore):
 
         if self.enable_caching:
             hidden_states = self.cache.apply_cache(
-                model_type="flux",
+                model_type="wan",
                 hidden_states=hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
                 temb=timestep_proj,

@@ -37,7 +37,7 @@ from diffusers import DiffusionPipeline, WanPipeline, AutoencoderKLWan
 from diffusers.utils import export_to_video
 
 from fastdm.model_entry import create_model
-from fastdm.caching.xcaching import BaseCache
+from fastdm.caching.xcaching import AutoCache
 # import transformers
 # transformers.utils.move_cache()
 
@@ -139,9 +139,10 @@ if __name__ == "__main__":
     video_gen_ = args.architecture == "wan"
     
     #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-    if args.cache is not None:
-        cache = BaseCache.from_json(args.cache)
-        cache.current_steps_callback = lambda: pipe.scheduler.step_index
+    if args.cache_config is not None:
+        cache = AutoCache.from_json(args.cache_config)
+        cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
+        cache.config.total_steps_callback = lambda: pipe.scheduler.timesteps.shape[0] # used by dicache
     else:
         cache = None
 
@@ -163,7 +164,7 @@ if __name__ == "__main__":
                                      kernel_backend=args.kernel_backend, 
                                      cache=cache).eval()
         elif "sd3" == args.architecture:
-            pipe.transformer = create_model("sd3", 
+            pipe.transformer = create_model("sd35", 
                                      ckpt_path=pipe.transformer.state_dict(), 
                                      dtype=running_data_type, 
                                      quant_type=quant_type, 
