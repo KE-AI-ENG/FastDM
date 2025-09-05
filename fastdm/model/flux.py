@@ -12,7 +12,7 @@ from fastdm.layer.embeddings import FluxPosEmbed, CombinedTimestepGuidanceTextPr
 from fastdm.layer.normalization import AdaLayerNormZero, AdaLayerNormContinuous, AdaLayerNormZeroSingle
 from fastdm.layer.transformer import Attention, FeedForward
 from fastdm.layer.qlinear import QLinear
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import AutoCache
 
 class FluxSingleTransformerBlock:
     r"""
@@ -218,7 +218,7 @@ class FluxTransformer2DModelCore(BaseModelCore):
         axes_dims_rope: Tuple[int] = (16, 56, 56),
         data_type = torch.bfloat16,
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
-        cache_config: CacheConfig = None,
+        cache: AutoCache = None,
     ):
         super().__init__(type="DiT")
         self.out_channels = out_channels
@@ -264,12 +264,10 @@ class FluxTransformer2DModelCore(BaseModelCore):
 
         self.mixed_precision = False
 
-        # teacahe
-        self.cache_config = cache_config
-        self.enable_caching = cache_config.enable_caching if cache_config is not None else False
-        self.accumulated_rel_l1_distance = 0
-        self.previous_modulated_input = None
-        self.previous_residual = None
+        # cache
+        self.cache = cache
+        self.cache_config = cache.config if cache is not None else None
+        self.enable_caching = self.cache_config.enable_caching if cache is not None else False
 
     def _pre_part_loading(self):
         self.init_weight(["time_text_embed.timestep_embedder.linear_1"], self.time_text_embed.timestep_embedder.linear1)
@@ -412,72 +410,19 @@ class FluxTransformer2DModelCore(BaseModelCore):
         image_rotary_emb = torch.cat((image_rotary_emb[0][:,0::2], image_rotary_emb[1][:,1::2]), dim=-1).to(hidden_states.dtype)
         
         if self.enable_caching:
-            # get current step
-            current_step = self.cache_config.current_steps_callback() if self.cache_config.current_steps_callback() is not None else 0
-
-            inp = hidden_states.clone()
-            temb_ = temb.clone()
-            modulated_inp, *_  = self.transformer_blocks[0].norm1.forward(inp, emb=temb_)
-            if current_step == 0:
-                should_calc = True
-                self.accumulated_rel_l1_distance = 0
-            else: 
-                rescale_func = np.poly1d(self.cache_config.coefficients)
-                self.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.previous_modulated_input).abs().mean() / self.previous_modulated_input.abs().mean()).cpu().item())
-                if self.accumulated_rel_l1_distance < self.cache_config.threshold:
-                    should_calc = False
-                else:
-                    should_calc = True
-                    self.accumulated_rel_l1_distance = 0
-            self.previous_modulated_input = modulated_inp 
-
-        if self.enable_caching:
-            if not should_calc:
-                hidden_states += self.previous_residual
-            else:
-                ori_hidden_states = hidden_states.clone()
-                for index_block, block in enumerate(self.transformer_blocks):
-                    encoder_hidden_states, hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        encoder_hidden_states=encoder_hidden_states,
-                        temb=temb,
-                        image_rotary_emb=image_rotary_emb,
-                        joint_attention_kwargs=joint_attention_kwargs,
-                    )
-                    # controlnet residual
-                    if controlnet_block_samples is not None:
-                        interval_control = len(self.transformer_blocks) / len(controlnet_block_samples)
-                        interval_control = int(np.ceil(interval_control))
-                        # For Xlabs ControlNet.
-                        if controlnet_blocks_repeat:
-                            hidden_states = (
-                                hidden_states + controlnet_block_samples[index_block % len(controlnet_block_samples)]
-                            )
-                        else:
-                            hidden_states = hidden_states + controlnet_block_samples[index_block // interval_control]
-
-                hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
-
-                for index_block, block in enumerate(self.single_transformer_blocks):
-                    hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        temb=temb,
-                        image_rotary_emb=image_rotary_emb,
-                        joint_attention_kwargs=joint_attention_kwargs,
-                    )
-
-                    # controlnet residual
-                    if controlnet_single_block_samples is not None:
-                        interval_control = len(self.single_transformer_blocks) / len(controlnet_single_block_samples)
-                        interval_control = int(np.ceil(interval_control))
-                        hidden_states[:, encoder_hidden_states.shape[1] :, ...] = (
-                            hidden_states[:, encoder_hidden_states.shape[1] :, ...]
-                            + controlnet_single_block_samples[index_block // interval_control]
-                        )
-
-                hidden_states = hidden_states[:, encoder_hidden_states.shape[1] :, ...]
-                self.previous_residual = hidden_states - ori_hidden_states
-
+            hidden_states = self.cache.apply_cache(
+                model_type="flux",
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+                attention_kwargs=joint_attention_kwargs,
+                transformer_blocks=self.transformer_blocks,
+                single_transformer_blocks=self.single_transformer_blocks,
+                controlnet_block_samples=controlnet_block_samples,
+                controlnet_single_block_samples=controlnet_single_block_samples,
+                controlnet_blocks_repeat=controlnet_blocks_repeat
+            )
         else:
             for index_block, block in enumerate(self.transformer_blocks):
                 encoder_hidden_states, hidden_states = block.forward(

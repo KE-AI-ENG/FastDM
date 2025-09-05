@@ -13,7 +13,7 @@ from fastdm.layer.embeddings import PatchEmbed, CombinedTimestepTextProjEmbeddin
 from fastdm.layer.normalization import AdaLayerNormContinuous, AdaLayerNormZero, SD35AdaLayerNormZeroX
 from fastdm.layer.transformer import Attention, FeedForward
 from fastdm.layer.qlinear import QLinear
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import AutoCache
 
 def _chunked_feed_forward(ff, hidden_states: torch.Tensor, chunk_dim: int, chunk_size: int):
     # "feed_forward_chunk_size" can be used to save memory
@@ -218,7 +218,7 @@ class SD3TransformerModelCore(BaseModelCore):
                 qk_norm: Optional[str] = "rms_norm",
                 data_type = torch.bfloat16,
                 quant_dtype: torch.dtype = torch.float8_e4m3fn,
-                cache_config: CacheConfig = None):
+                cache: AutoCache = None):
         super().__init__(type="DiT")
 
         # This is needed to imitate huggingface config behavior
@@ -241,12 +241,11 @@ class SD3TransformerModelCore(BaseModelCore):
         self.inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
         self.quant_dtype = quant_dtype
 
-        # teacache related
-        self.cache_config = cache_config
-        self.enable_caching = cache_config.enable_caching if cache_config is not None else False
-        self.accumulated_rel_l1_distance = 0
-        self.previous_modulated_input = None
-        self.previous_residual = None
+        # cache
+        self.cache = cache
+        self.cache_config = cache.config if cache is not None else None
+        self.enable_caching = self.cache_config.enable_caching if cache is not None else False
+
 
         self.pos_embed = PatchEmbed(
             height=self.config.sample_size,
@@ -383,45 +382,14 @@ class SD3TransformerModelCore(BaseModelCore):
         encoder_hidden_states = self.context_embedder.forward(encoder_hidden_states)
 
         if self.enable_caching:
-            # get current step
-            current_step = self.cache_config.current_steps_callback() if self.cache_config.current_steps_callback() is not None else 0
-
-            inp = hidden_states.clone()
-            temb_ = temb.clone()
-            modulated_inp, *_ = self.transformer_blocks[0].norm1.forward(inp, emb=temb_)
-            if current_step == 0:
-                should_calc = True
-                self.accumulated_rel_l1_distance = 0
-            else:
-                # coefficients = [5.23253188e+04, -1.78649195e+04, 1.87253967e+03, -7.14262937e+01, 9.59451394e-01]
-                # coefficients = [ 5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01]
-                rescale_func = np.poly1d(self.cache_config.coefficients)
-                self.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.previous_modulated_input).abs().mean() / self.previous_modulated_input.abs().mean()).cpu().item())
-                if self.accumulated_rel_l1_distance < self.cache_config.threshold:
-                    should_calc = False
-                else:
-                    should_calc = True
-                    self.accumulated_rel_l1_distance = 0
-            self.previous_modulated_input = modulated_inp 
-
-        if self.enable_caching:
-            if not should_calc:
-                hidden_states += self.previous_residual
-            else:
-                ori_hidden_states = hidden_states.clone()
-                for index_block, block in enumerate(self.transformer_blocks):
-                    encoder_hidden_states, hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        encoder_hidden_states=encoder_hidden_states,
-                        temb=temb,
-                        joint_attention_kwargs=joint_attention_kwargs,
-                    )
-
-                    # controlnet residual
-                    if block_controlnet_hidden_states is not None and block.context_pre_only is False:
-                        interval_control = len(self.transformer_blocks) // len(block_controlnet_hidden_states)
-                        hidden_states = hidden_states + block_controlnet_hidden_states[index_block // interval_control]
-                self.previous_residual = hidden_states - ori_hidden_states
+            hidden_states = self.cache.apply_cache(
+                model_type="sd35",
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                attention_kwargs=joint_attention_kwargs,
+                transformer_blocks=self.transformer_blocks,
+            )
         else:
             for index_block, block in enumerate(self.transformer_blocks):
                 encoder_hidden_states, hidden_states = block.forward(

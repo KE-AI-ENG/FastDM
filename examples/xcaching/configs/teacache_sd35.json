@@ -1,4 +1,5 @@
 {
+    "cache_algorithm": "teacache",
     "enable_caching": true,
     "threshold": 0.15,
     "negtive_cache": false,

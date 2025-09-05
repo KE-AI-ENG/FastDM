@@ -10,7 +10,9 @@ from fastdm.model_entry import (
     FluxControlnetWrapper, FluxTransformerWrapper,
     SDXLControlnetModelWrapper, SDXLUNetModelWrapper
 )
-from fastdm.cache_config import CacheConfig
+from fastdm.model_entry import create_model
+
+from fastdm.caching.xcaching import AutoCache
 
 def preprocess_flux(image_path):
     """Flux: load raw image"""
@@ -31,6 +33,16 @@ def run_pipeline(
     preprocess_fn=None,
     args=None
 ):
+    # get quantization type
+    if args.use_fp8:
+        print("enable fp8 model inference!")
+        quant_type = torch.float8_e4m3fn
+    elif args.use_int8:
+        print("enable int8 model inference!")
+        quant_type = torch.int8
+    else:
+        quant_type = None
+
     # load controlnet
     controlnet = controlnet_class.from_pretrained(
         args.controlnet_model,
@@ -39,7 +51,7 @@ def run_pipeline(
 
     # load Pipeline
     kwargs = {}
-    if args.model_type == "sdxl":
+    if args.architecture == "sdxl":
         from diffusers import AutoencoderKL
         kwargs["vae"] = AutoencoderKL.from_pretrained(args.vae_model, torch_dtype=args.dtype)
 
@@ -50,45 +62,49 @@ def run_pipeline(
         **kwargs
     ).to("cuda")
 
-    # fastdm
-    if transformer_wrapper:
-        if args.cache_config is not None:
-            cache_config = CacheConfig.from_json(args.cache_config)
-            cache_config.current_steps_callback = lambda: pipe.scheduler.step_index
-        else:
-            cache_config = None
-        pipe.transformer = transformer_wrapper(
-            pipe.transformer.state_dict(),
-            in_channels=64,
-            quant_type=torch.float8_e4m3fn,
-            dtype=args.dtype,
-            kernel_backend="cuda",
-            cache_config=cache_config
-        ).eval()
+    if not args.use_diffusers:
+        if transformer_wrapper:
+            if args.cache_config is not None:
+                cache = AutoCache.from_json(args.cache_config)
+                cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
+                cache.config.total_steps_callback = lambda: pipe.scheduler.timesteps.shape[0] # used by dicache
+            else:
+                cache = None
+            pipe.transformer = create_model(
+                "flux",
+                ckpt_path=pipe.transformer.state_dict(),
+                in_channels=64,
+                quant_type=quant_type,
+                dtype=args.dtype,
+                kernel_backend=args.kernel_backend,
+                cache=cache
+            ).eval()
 
-    if unet_wrapper:
-        pipe.unet = unet_wrapper(
-            pipe.unet.state_dict(),
-            quant_type=torch.float8_e4m3fn,
-            dtype=args.dtype,
-            kernel_backend="cuda"
-        ).eval()
-
-    if args.model_type == "flux":
-        pipe.controlnet = FluxControlnetWrapper(
-            pipe.controlnet.state_dict(),
-            in_channels=64,
-            quant_type=torch.float8_e4m3fn,
-            kernel_backend="cuda"
-        ).eval()
-    else:  # sdxl
-        pipe.controlnet = SDXLControlnetModelWrapper(
-            pipe.controlnet.config,
-            pipe.controlnet.state_dict(),
-            dtype=args.dtype,
-            quant_type=torch.float8_e4m3fn,
-            kernel_backend="cuda"
-        ).eval()
+        if unet_wrapper:
+            pipe.unet = create_model(
+                "sdxl",
+                ckpt_path=pipe.unet.state_dict(),
+                quant_type=quant_type,
+                dtype=args.dtype,
+                kernel_backend=args.kernel_backend
+            ).eval()
+        if args.architecture == "flux":
+            pipe.controlnet = create_model(
+                "flux_controlnet",
+                ckpt_path=pipe.controlnet.state_dict(),
+                in_channels=64,
+                quant_type=quant_type,
+                kernel_backend=args.kernel_backend
+            ).eval()
+        else:  # sdxl
+            pipe.controlnet = create_model(
+                "sdxl_controlnet",
+                ckpt_config=pipe.controlnet.config,
+                ckpt_path=pipe.controlnet.state_dict(),
+                dtype=args.dtype,
+                quant_type=quant_type,
+                kernel_backend="cuda"
+            ).eval()
 
     # preprocess control image
     control_image = preprocess_fn(args.control_image)
@@ -104,7 +120,7 @@ def run_pipeline(
     )
 
     # add image or control_image based on model type
-    if args.model_type == "flux":
+    if args.architecture == "flux":
         common_kwargs["control_image"] = control_image
     else:  # sdxl
         common_kwargs["image"] = control_image
@@ -119,8 +135,8 @@ def run_pipeline(
     images = pipe(**common_kwargs).images
     torch.cuda.synchronize()
 
-    print(f"{args.model_type.upper()} FastDM inference time: {time.time() - start_time:.2f}s")
-    images[0].save(args.output)
+    print(f"{args.architecture.upper()} FastDM inference time: {time.time() - start_time:.2f}s")
+    images[0].save(args.output_path)
 
 def str_to_dtype(dtype_str):
     dtype_map = {
@@ -133,7 +149,7 @@ def str_to_dtype(dtype_str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", choices=["flux", "sdxl"], required=True)
+    parser.add_argument("--architecture", choices=["flux", "sdxl"], required=True)
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--controlnet_model", type=str, required=True)
     parser.add_argument("--vae_model", type=str, default="madebyollin/sdxl-vae-fp16-fix")
@@ -146,14 +162,20 @@ if __name__ == "__main__":
     parser.add_argument("--guidance_scale", type=float, default=3.5)
     parser.add_argument("--width", type=int, default=1024)
     parser.add_argument("--height", type=int, default=1024)
-    parser.add_argument("--output", type=str, default="output.png")
+    parser.add_argument("--output-path", type=str, default="output.png")
+    parser.add_argument('--num-warmup-runs', type=int, default=1, help="Number of warmup runs before benchmarking performance")
+    parser.add_argument('--use-diffusers', action='store_true', help="Use hf-diffusers, Enable pytorch scale-dot-product-attention")
+
+    parser.add_argument('--use-fp8', action='store_true', help="Enable fp8 model inference")
+    parser.add_argument('--use-int8', action='store_true', help="Enable int8 model inference")
+    parser.add_argument('--kernel-backend', default="cuda", help="kernel backend: torch/triton/cuda")
 
     # caching args
     parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
 
     args = parser.parse_args()
 
-    if args.model_type == "flux":
+    if args.architecture == "flux":
         from diffusers import FluxControlNetModel, FluxControlNetPipeline
         run_pipeline(
             pipe_class=FluxControlNetPipeline,

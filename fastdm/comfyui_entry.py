@@ -363,10 +363,10 @@ class ComfyUIFluxForwardWrapper(nn.Module):
                 should_calc = True
                 self.model.accumulated_rel_l1_distance = 0
             else: 
-                coefficients = self.model.cache_config.coefficients
+                coefficients = self.model.cache.coefficients
                 rescale_func = np.poly1d(coefficients)
                 self.model.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.model.previous_modulated_input).abs().mean() / self.model.previous_modulated_input.abs().mean()).cpu().item())
-                if self.model.accumulated_rel_l1_distance < self.model.cache_config.threshold:
+                if self.model.accumulated_rel_l1_distance < self.model.cache.threshold:
                     should_calc = False
                 else:
                     should_calc = True
@@ -565,7 +565,7 @@ class ComfyUISD35ForwardWrapper(nn.Module):
         # set current steps callback for fastdm cache
         all_steps_sigmas = transformer_options["sample_sigmas"]
         current_steps_sigmas = transformer_options["sigmas"]
-        self.model.cache_config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
         
         output = self.model.forward(
             hidden_states=hidden_states,
@@ -637,7 +637,7 @@ class ComfyUIQwenImageForwardWrapper(nn.Module):
         # set current steps callback for fastdm cache
         all_steps_sigmas = transformer_options["sample_sigmas"]
         current_steps_sigmas = transformer_options["sigmas"]
-        self.model.cache_config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
         
         output = self.model.forward(
             hidden_states=hidden_states,

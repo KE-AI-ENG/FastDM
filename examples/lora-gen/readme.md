@@ -10,6 +10,8 @@
 
 3. 生成图片(beautiful girls)：
 
+以下示例prompt来自[作品集promts](https://www.modelscope.cn/KookYan/Kook_xieshi_Kook_Qwen.git)
+
 `cd ../demo`
 
 `python gen.py --model-path /path/to/qwen-lora-merged --architecture qwen --height 1472 --width 1104 --steps 30 --guidance-scale 4.0 --use-int8 --output-path ./qwen-merge.png --num-warmup-runs 0 --seed 123 --prompts "小红书美女，旅游，拍照，小红书风格， 自然，蓝天，绿树，小溪，瀑布，石子，徒步，山，游客,半身照,sweet girl"`

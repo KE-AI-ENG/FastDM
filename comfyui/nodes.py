@@ -21,7 +21,7 @@ from fastdm.comfyui_entry import (
     ComfyUIQwenImageForwardWrapper
 )
 from fastdm.kernel.utils import set_global_backend
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import BaseCache
 
 QUANT_DTYPE_MAP = {
     "int8": torch.int8,
@@ -167,7 +167,7 @@ class FastdmFluxLoader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache_config = CacheConfig(
+        cache = BaseCache(
             enable_caching=use_cache,
             threshold=cache_threshold,
             coefficients=[4.98651651e+02, -2.83781631e+02,  5.58554382e+01, -3.82021401e+00, 2.64230861e-01],
@@ -178,7 +178,7 @@ class FastdmFluxLoader:
                                                 guidance_embeds=True, 
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                cache_config=cache_config,)
+                                                cache=cache,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)
@@ -291,7 +291,7 @@ class FastdmSD35Loader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache_config = CacheConfig(
+        cache = BaseCache(
             enable_caching=use_cache,
             threshold=cache_threshold,
             coefficients=[ 5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01],
@@ -300,7 +300,7 @@ class FastdmSD35Loader:
         fastdm_core_model = SD3TransformerModelCore(
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                cache_config=cache_config,)
+                                                cache=cache,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)
@@ -358,7 +358,7 @@ class FastdmQwenImageLoader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache_config = CacheConfig(
+        cache = BaseCache(
             enable_caching=use_cache,
             threshold=cache_threshold,
             coefficients=[20.04634615, 3.13881129, -11.25528647, 4.70808005, -0.15457715],
@@ -368,7 +368,7 @@ class FastdmQwenImageLoader:
         fastdm_core_model = QwenImageTransformer2DModelCore(
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
-                                                cache_config=cache_config,)
+                                                cache=cache,)
         
         # load model weights
         fastdm_core_model.weight_loading(ckpt_path)

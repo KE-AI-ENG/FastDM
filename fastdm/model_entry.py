@@ -20,7 +20,7 @@ from fastdm.model.qwenimage import QwenImageTransformer2DModelCore
 from fastdm.model.wan import WanTransformer3DModelCore
 from fastdm.model.controlnets import SdxlControlNetModelCore, FluxControlNetModelCore
 from fastdm.kernel.utils import set_global_backend
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import AutoCache
 
 class ConfigMixin:
     """Configuration-related mixin class"""
@@ -74,7 +74,8 @@ class BaseModelWrapper(nn.Module, ConfigMixin):
             print(f"Exception in cache context '{name}': {type(e).__name__}: {e}")
             raise
         finally:
-            print(f"Exiting cache context: {name}")
+            # print(f"Exiting cache context: {name}")
+            pass
     
     def to(self, *args, **kwargs):
         """Overrides the default `to` method to ensure that all submodules are moved to the correct device and dtype."""
@@ -98,7 +99,7 @@ class FluxTransformerWrapper(BaseModelWrapper):
         dtype: torch.dtype = torch.bfloat16, 
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
-        cache_config: CacheConfig = None,
+        cache: AutoCache = None,
         **kwargs
     ):
         super().__init__(kernel_backend)
@@ -112,9 +113,9 @@ class FluxTransformerWrapper(BaseModelWrapper):
         )
         
         self.dtype = dtype
-        self._initialize_core_model(ckpt_path, quant_type, cache_config, **kwargs)
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
-    def _initialize_core_model(self, ckpt_path, quant_type, cache_config, **kwargs):
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = FluxTransformer2DModelCore(
             in_channels=self.config.in_channels, 
@@ -122,7 +123,7 @@ class FluxTransformerWrapper(BaseModelWrapper):
             guidance_embeds=self.config.guidance_embeds, 
             data_type=self.config.dtype,
             quant_dtype=quant_type,
-            cache_config=cache_config,
+            cache=cache,
             **kwargs
         )
         
@@ -149,7 +150,7 @@ class QwenTransformerWrapper(BaseModelWrapper):
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
         need_resolve_oom=False,
-        cache_config = None,
+        cache = None,
         **kwargs
     ):
         super().__init__(kernel_backend)
@@ -165,9 +166,9 @@ class QwenTransformerWrapper(BaseModelWrapper):
 
         self.need_resolve_oom = need_resolve_oom
 
-        self._initialize_core_model(ckpt_path, quant_type, cache_config, **kwargs)
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
-    def _initialize_core_model(self, ckpt_path, quant_type, cache_config, **kwargs):
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = QwenImageTransformer2DModelCore(
             in_channels=self.config.in_channels, 
@@ -175,7 +176,7 @@ class QwenTransformerWrapper(BaseModelWrapper):
             guidance_embeds=self.config.guidance_embeds, 
             data_type=self.config.dtype,
             quant_dtype=quant_type,
-            cache_config=cache_config,
+            cache=cache,
             oom_ressolve=self.need_resolve_oom,
             **kwargs
         )
@@ -195,7 +196,7 @@ class SD35TransformerWrapper(BaseModelWrapper):
         dtype: torch.dtype = torch.bfloat16, 
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
-        cache_config = None,
+        cache = None,
         **kwargs
     ):
         super().__init__(kernel_backend)
@@ -209,9 +210,9 @@ class SD35TransformerWrapper(BaseModelWrapper):
         )
         
         self.dtype = dtype
-        self._initialize_core_model(ckpt_path, quant_type, cache_config, **kwargs)
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
-    def _initialize_core_model(self, ckpt_path, quant_type, cache_config, **kwargs):
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = SD3TransformerModelCore(
             in_channels=self.config.in_channels, 
@@ -220,7 +221,7 @@ class SD35TransformerWrapper(BaseModelWrapper):
             sample_size=self.config.sample_size,
             data_type=self.config.dtype,
             quant_dtype=quant_type,
-            cache_config=cache_config,
+            cache=cache,
             **kwargs
         )
         
@@ -364,22 +365,24 @@ class FluxControlnetWrapper(BaseModelWrapper):
         dtype: torch.dtype = torch.bfloat16, 
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
-        cache_config = None,
+        cache = None,
         **kwargs
     ):
         super().__init__(kernel_backend)
         
+        # diffusers compatibility
         self.config = self._create_diffusers_config(
             in_channels=in_channels,
             out_channels=out_channels,
             guidance_embeds=True,
             dtype=dtype
         )
+        self.input_hint_block = None
         
         self.dtype = dtype
-        self._initialize_core_model(ckpt_path, quant_type, cache_config, **kwargs)
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
-    def _initialize_core_model(self, ckpt_path, quant_type, cache_config, **kwargs):
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = FluxControlNetModelCore(
             in_channels=self.config.in_channels, 
@@ -387,7 +390,6 @@ class FluxControlnetWrapper(BaseModelWrapper):
             guidance_embeds=self.config.guidance_embeds, 
             data_type=self.config.dtype,
             quant_dtype=quant_type,
-            cache_config=cache_config,
             **kwargs
         )
         
@@ -407,33 +409,38 @@ class WanTransformer3DWrapper(BaseModelWrapper):
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
         config_json=None,
-        cache_config = None,
+        cache = None,
         **kwargs
     ):
         super().__init__(kernel_backend, config_path=config_json)
         
         self.config = self._create_diffusers_config(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            ip_adapter=False,
-            global_pool_conditions=False,
+            in_channels=self.model_config_dict['in_channels'],
+            out_channels=self.model_config_dict['out_channels'],
             dtype=dtype
         )
         
         self.dtype = dtype
-        self._initialize_core_model(ckpt_path, quant_type, cache_config, **kwargs)
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
-    def _initialize_core_model(self, ckpt_path, quant_type, cache_config, **kwargs):
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
         """Initialize core model"""
         self.core_model = WanTransformer3DModelCore(
-            in_channels=self.config.in_channels, 
-            out_channels=self.config.out_channels,
-            ip_adapter=self.config.ip_adapter,
-            global_pool_conditions=self.config.global_pool_conditions,
-            data_type=self.config.dtype,
-            quant_dtype=quant_type,
-            cache_config=cache_config,
-            **kwargs
+                patch_size = self.model_config_dict['patch_size'],
+                num_attention_heads = self.model_config_dict['num_attention_heads'],
+                attention_head_dim = self.model_config_dict['attention_head_dim'],
+                in_channels = self.model_config_dict['in_channels'],
+                out_channels = self.model_config_dict['out_channels'],
+                text_dim = self.model_config_dict['text_dim'],
+                freq_dim = self.model_config_dict['freq_dim'],
+                ffn_dim = self.model_config_dict['ffn_dim'],
+                num_layers = self.model_config_dict['num_layers'],
+                qk_norm = self.model_config_dict['qk_norm'],
+                eps = self.model_config_dict['eps'],
+                rope_max_seq_len = self.model_config_dict['rope_max_seq_len'],
+                data_type=self.config.dtype, 
+                quant_dtype=quant_type,
+                cache=cache
         )
         
         if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):

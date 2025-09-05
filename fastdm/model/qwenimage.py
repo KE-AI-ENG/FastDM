@@ -12,7 +12,7 @@ from fastdm.layer.embeddings import QwenEmbedRope, QwenTimestepProjEmbeddings
 from fastdm.layer.normalization import RMSNorm, AdaLayerNormContinuous
 from fastdm.layer.transformer import Attention, FeedForward
 from fastdm.layer.qlinear import QLinear
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import AutoCache
 
 class QwenImageTransformerBlock:
     def __init__(
@@ -154,7 +154,7 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         axes_dims_rope: Tuple[int, int, int] = (16, 56, 56),
         data_type = torch.bfloat16,
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
-        cache_config: CacheConfig = None,
+        cache: AutoCache = None,
         oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
     ):
         super().__init__("DiT")
@@ -192,39 +192,10 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
 
         self.proj_out = QLinear(self.inner_dim, patch_size * patch_size * self.out_channels, data_type=data_type)
 
-        # teacahe
-        self.cache_config = cache_config
-        self.enable_caching = cache_config.enable_caching if cache_config is not None else False
-        # Note: # qwenimage will excute the forward separately in one step for prompt and negative prompt.
-        if self.enable_caching:
-            self.accumulated_rel_l1_distance_dict = {
-                "positive": 0,
-                "negative": 0
-            }
-            self.previous_modulated_input_dict = {
-                "positive": None,
-                "negative": None
-            }
-            self.previous_residual_dict = {
-                "positive": None,
-                "negative": None
-            }
-            self.previous_encoder_residual_dict = {
-                "positive": None,
-                "negative": None
-            }
-            self.coefficients = {
-                "positive": self.cache_config.coefficients,
-                "negative": self.cache_config.negtive_coefficients
-            } #txt_modulated
-            # self.coefficients = {
-            #     "positive": [ 12.67449879, -24.4436427,   14.21152966,  -1.58014773,   0.12182928],
-            #     "negative": [ 11.91250519, -22.92346214,  13.13159225,  -1.2740735,    0.10579601]
-            # } #tmeb get bad result for comfyui forward.
-            self.cache_status = {
-                "positive": True,
-                "negative": False
-            }
+        # cache
+        self.cache = cache
+        self.cache_config = cache.config if cache is not None else None
+        self.enable_caching = self.cache_config.enable_caching if cache is not None else False
 
     def _pre_part_loading(self):
         self.init_weight(["time_text_embed.timestep_embedder.linear_1"], self.time_text_embed.timestep_embedder.linear1)
@@ -343,70 +314,15 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         image_rotary_emb = torch.cat([txt_freqs, img_freqs], dim=0).contiguous()
 
         if self.enable_caching:
-            # get current step
-            current_step = self.cache_config.current_steps_callback() if self.cache_config.current_steps_callback() is not None else 0
-
-            inp = hidden_states.clone()
-            inp1 = encoder_hidden_states.clone()
-            temb_ = temb.clone()
-
-            img_mod_params = self.transformer_blocks[0].img_mod_proj.forward(F.silu(temb_))
-            txt_mod_params = self.transformer_blocks[0].txt_mod_proj.forward(F.silu(temb_))
-            # Split modulation parameters for norm1 and norm2
-            img_mod1, img_mod2 = img_mod_params.chunk(2, dim=-1)  # Each [B, 3*dim]
-            txt_mod1, txt_mod2 = txt_mod_params.chunk(2, dim=-1)  # Each [B, 3*dim]
-            # Process image stream - norm1 + modulation
-            img_normed = F.layer_norm(inp, (self.transformer_blocks[0].dim,), eps=self.transformer_blocks[0].eps)
-            img_modulated, img_gate1 = self.transformer_blocks[0]._modulate(img_normed, img_mod1)
-            # Process text stream - norm1 + modulation
-            txt_normed = F.layer_norm(inp1, (self.transformer_blocks[0].dim,), eps=self.transformer_blocks[0].eps)
-            txt_modulated, txt_gate1 = self.transformer_blocks[0]._modulate(txt_normed, txt_mod1)
-
-            modulated_inp = txt_modulated.clone()
-
-            if self.cache_config.negtive_cache:
-                cache_key = None
-                for k in self.cache_status:
-                    if self.cache_status[k] and cache_key is None:
-                        cache_key = k
-                    self.cache_status[k] = not self.cache_status[k]
-            else:
-                cache_key = "positive"
-
-            if current_step == 0:
-                should_calc = True
-                self.accumulated_rel_l1_distance_dict[cache_key] = 0
-            else: 
-                coefficients = self.coefficients[cache_key]
-                rescale_func = np.poly1d(coefficients)
-                self.accumulated_rel_l1_distance_dict[cache_key] += rescale_func(((modulated_inp-self.previous_modulated_input_dict[cache_key]).abs().mean() / self.previous_modulated_input_dict[cache_key].abs().mean()).cpu().item())
-
-                if self.accumulated_rel_l1_distance_dict[cache_key] < self.cache_config.threshold:
-                    should_calc = False
-                else:
-                    should_calc = True
-                    self.accumulated_rel_l1_distance_dict[cache_key] = 0
-            self.previous_modulated_input_dict[cache_key] = modulated_inp
-
-        if self.enable_caching:
-            if not should_calc:
-                hidden_states += self.previous_residual_dict[cache_key]
-                encoder_hidden_states += self.previous_encoder_residual_dict[cache_key]
-            else:
-                ori_hidden_states = hidden_states.clone()
-                ori_encoder_hidden_states = encoder_hidden_states.clone()
-                for index_block, block in enumerate(self.transformer_blocks):
-                # for index_block, block in enumerate(self.transformer_blocks[1:]):
-                    encoder_hidden_states, hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        encoder_hidden_states=encoder_hidden_states,
-                        encoder_hidden_states_mask=encoder_hidden_states_mask,
-                        temb=temb,
-                        image_rotary_emb=image_rotary_emb,
-                        joint_attention_kwargs=attention_kwargs,
-                    )
-                self.previous_residual_dict[cache_key] = hidden_states - ori_hidden_states
-                self.previous_encoder_residual_dict[cache_key] = encoder_hidden_states - ori_encoder_hidden_states
+            hidden_states = self.cache.apply_cache(
+                model_type="qwenimage",
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+                attention_kwargs=attention_kwargs,
+                transformer_blocks=self.transformer_blocks,
+            )
         else:
             for index_block, block in enumerate(self.transformer_blocks):
                 encoder_hidden_states, hidden_states = block.forward(

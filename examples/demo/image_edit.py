@@ -9,7 +9,7 @@ from diffusers import DiffusionPipeline
 from diffusers.utils import load_image
 
 from fastdm.model_entry import create_model
-from fastdm.cache_config import CacheConfig
+from fastdm.caching.xcaching import AutoCache
 
 def parseArgs():
     parser = argparse.ArgumentParser(description="Options for Diffusion model Image Edit Demo", conflict_handler='resolve')
@@ -69,10 +69,11 @@ if __name__ == "__main__":
     
     #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
     if args.cache_config is not None:
-        cache_config = CacheConfig.from_json(args.cache_config)
-        cache_config.current_steps_callback = lambda: pipe.scheduler.step_index
+        cache = AutoCache.from_json(args.cache_config)
+        cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
+        cache.config.total_steps_callback = lambda: pipe.scheduler.timesteps.shape[0] # used by dicache
     else:
-        cache_config = None
+        cache = None
 
     if args.use_diffusers:
         pass
@@ -82,7 +83,7 @@ if __name__ == "__main__":
                                             ckpt_path = pipe.transformer.state_dict(),
                                             quant_type=quant_type, 
                                             kernel_backend=args.kernel_backend,
-                                            cache_config=cache_config, 
+                                            cache=cache, 
                                             need_resolve_oom=args.qwen_oom_resolve).eval()
             if args.qwen_oom_resolve:
                 import os
@@ -97,7 +98,7 @@ if __name__ == "__main__":
                                             ckpt_path = pipe.transformer.state_dict(),
                                             quant_type=quant_type, 
                                             kernel_backend=args.kernel_backend,
-                                            cache_config=cache_config).eval()            
+                                            cache=cache).eval()            
 
     if is_qwen_img and args.qwen_oom_resolve:
         pipe.vae.to("cuda")
