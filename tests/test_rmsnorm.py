@@ -85,5 +85,5 @@ def test_performance_rmsnorm(dtype = torch.bfloat16, backend="triton"):
 if __name__ == "__main__":
     test_accuracy_rmsnorm(backend="triton")
     test_performance_rmsnorm(backend="triton")
-    # test_accuracy_rmsnorm(backend="cuda")
-    # test_performance_rmsnorm(backend="cuda")
+    test_accuracy_rmsnorm(backend="cuda")
+    test_performance_rmsnorm(backend="cuda")

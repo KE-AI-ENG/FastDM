@@ -6,16 +6,16 @@ import math
 
 INPUT_ARGS = [
     # [1, 75600, 40, 128], #wan2.2
-    # [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],    # flux_fp8
-    [1, 4110, 1, 4110, 24, 24, 128, 'False', 'False'],
+    # [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],    # flux_fp8   # TODO
+    [1, 4110, 1, 4110, 24, 24, 128, 'False', 'False'],      # qwen_fp8
     # [2, 4685, 2, 4685, 24, 24, 64, 'False', 'True'],     # sd3_fp8
     # [2, 4096, 2, 4096, 24, 24, 64, 'False', 'True'],     # sd3_fp8
     [2, 4096, 2, 4096, 10, 10, 64, 'False', 'False'],
     [2, 4096, 2, 77, 10, 10, 64, 'False', 'False'],         # sdxl_bf16
     [2, 1024, 2, 1024, 20, 20, 64, 'False', 'False'],
     [2, 1024, 2, 77, 20, 20, 64, 'False', 'False'],         # sdxl_bf16
-    [1, 4106, 1, 4106, 24, 24, 128, 'False', 'False'],
-    [2, 4685, 2, 4685, 24, 24, 64, 'False', 'False'],       # sd3_fp8   atol=0.17
+    [1, 4106, 1, 4106, 24, 24, 128, 'False', 'False'],      # qwen_bf16
+    [2, 4685, 2, 4685, 24, 24, 64, 'False', 'False'],       # sd3_fp8
     [2, 4096, 2, 4096, 24, 24, 64, 'False', 'False'],       # sd3_fp8
 ]
 
@@ -72,7 +72,7 @@ def test_accuracy_sdpa(dtype = torch.bfloat16, backend="triton"):
         C_backend = scaled_dot_product_attention(query, key, value, head_num_q, head_num_kv, head_dim, scale=scale)
 
         try:
-            kernel_output_assert_close(C_torch.reshape((B_q, S_q, head_num_q*head_dim)), C_backend, rtol=0.0, atol=1.7e-1)   # rtol=0.0, atol=1.7e-1
+            kernel_output_assert_close(C_torch.reshape((B_q, S_q, head_num_q*head_dim)), C_backend, rtol=0.0, atol=1.8e-2)   # rtol=0.0, atol=1.8e-2
         except Exception as e:
             unpass += 1
             print(f"ERROR: B_q={B_q}, S_q={S_q}, B_kv={B_kv}, S_kv={S_kv}, head_num={head_num_q}, head_dim={head_dim}")

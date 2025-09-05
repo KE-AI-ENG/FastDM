@@ -35,7 +35,7 @@ def is_hopper():
 @triton.jit
 def _attn_fwd_inner(acc, l_i, m_i, q,
                     desc_k, desc_v,
-                    off_b, off_h, H, N_KV: tl.constexpr, N_Q: tl.constexpr,
+                    off_b, off_h, H, N_KV: tl.constexpr, 
                     dtype: tl.constexpr, qk_scale,
                     BLOCK_N_KV: tl.constexpr, BLOCK_N_Q: tl.constexpr,
                     warp_specialize: tl.constexpr):
@@ -53,8 +53,8 @@ def _attn_fwd_inner(acc, l_i, m_i, q,
         v = desc_v.load([kv_offset_y, 0])
         qk = tl.dot(q, k)
         qk_s = qk * qk_scale
-        if start_n_kv+BLOCK_N_KV >= hi: # need mask
-            mask_qk = (tl.arange(0, BLOCK_N_Q)[:, None] < N_Q) & ((start_n_kv + tl.arange(0, BLOCK_N_KV))[None, :] < hi)
+        if start_n_kv+BLOCK_N_KV >= hi: # just for (N_KV/BLOCK_N_KV!=0)
+            mask_qk = (tl.arange(0, BLOCK_N_Q)[:, None] < BLOCK_N_Q) & ((start_n_kv + tl.arange(0, BLOCK_N_KV))[None, :] < hi)
             qk_s = tl.where(mask_qk, qk_s, -float("inf"))
         m_ij = tl.maximum(m_i, tl.max(qk_s, 1))
         qk_s = qk_s - m_ij[:, None]
@@ -88,12 +88,12 @@ def _host_descriptor_pre_hook(nargs):
 NUM_STAGES_OPTIONS = [2, 3, 4]
 
 configs = [
-    # triton.Config(dict(BLOCK_N_Q=64, BLOCK_N_KV=32), num_stages=2, num_warps=4, pre_hook=_host_descriptor_pre_hook)
-    triton.Config({'BLOCK_N_Q': BM, 'BLOCK_N_KV': BN}, num_stages=s, num_warps=w, pre_hook=_host_descriptor_pre_hook) \
-    for BM in [64, 128]\
-    for BN in [32, 64, 128]\
-    for s in NUM_STAGES_OPTIONS \
-    for w in [4, 8]\
+    triton.Config(dict(BLOCK_N_Q=64, BLOCK_N_KV=32), num_stages=2, num_warps=4, pre_hook=_host_descriptor_pre_hook) # TODO support autotune
+    # triton.Config({'BLOCK_N_Q': BM, 'BLOCK_N_KV': BN}, num_stages=s, num_warps=w, pre_hook=_host_descriptor_pre_hook) \   
+    # for BM in [64, 128]\
+    # for BN in [32, 64, 128]\
+    # for s in NUM_STAGES_OPTIONS \
+    # for w in [4, 8]\
 ]
 if "PYTEST_VERSION" in os.environ:
     # Use a single config in testing for reproducibility
@@ -174,7 +174,7 @@ def _attn_fwd(sm_scale,
 
     acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q,
                                     desc_k, desc_v,
-                                    off_b, off_h, H, N_KV, N_Q,
+                                    off_b, off_h, H, N_KV, 
                                     dtype, qk_scale,
                                     BLOCK_N_KV, BLOCK_N_Q,
                                     warp_specialize)
@@ -182,7 +182,11 @@ def _attn_fwd(sm_scale,
     # epilogue
     m_i += tl.math.log(l_i)
     acc = acc / l_i[:, None]
-    desc_o.store([qo_offset_y, 0], acc.to(dtype))
+
+    if start_n_q * BLOCK_N_Q + BLOCK_N_Q >= N_Q:    # just for ((N_Q/BLOCK_N_Q!=0) and (B!=0 or H!=0))
+        mask_o = (start_n_q * BLOCK_N_Q + tl.arange(0, BLOCK_N_Q)[:, None] < N_Q) & (tl.arange(0, HEAD_DIM)[None, :] < HEAD_DIM)
+        acc = tl.where(mask_o, acc, 0.0)
+    desc_o.atomic_add([qo_offset_y, 0], acc.to(dtype))  # [250905] atomic_add can't support debug
 
     
 @kernel_registry.register('sdpa', 'triton')
@@ -219,7 +223,7 @@ def sdpa_triton(
 
     # shape constraints
     assert q.shape[1] == v.shape[1] and q.shape[1] == v.shape[1]        # assert num_heads, only support MHA now
-    assert k.shape[2] == v.shape[2] # assert seq_len_kv
+    assert k.shape[2] == v.shape[2]                                     # assert seq_len_kv
     assert q.shape[-1] == k.shape[-1] and q.shape[-1] == v.shape[-1]    # assert head_dim
     assert q.shape[-1] in {16, 32, 64, 128, 256}
     batch_size = q.shape[0]
@@ -228,8 +232,7 @@ def sdpa_triton(
     seq_len_q = q.shape[2]
     seq_len_kv = k.shape[2]
 
-    o = torch.empty_like(q)
-    stage = 3 if is_causal else 1
+    o = torch.zeros_like(q)
     extra_kern_args = {}
 
     # Use device_descriptor for Hopper + warpspec.
