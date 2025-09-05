@@ -163,6 +163,9 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
 
         self.need_resolve_oom = oom_ressolve
 
+        #This part occupies 12G vram. If quantization is performed, it will affect the generation effect, so we quantize it in <24GB vram cards
+        self.quant_img_txt_mod = self.need_resolve_oom and (torch.cuda.get_device_properties().total_memory/(1<<30))<24
+
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
 
@@ -188,8 +191,6 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         self.norm_out = AdaLayerNormContinuous(self.inner_dim, self.inner_dim, elementwise_affine=False, eps=1e-6, data_type=data_type)
 
         self.proj_out = QLinear(self.inner_dim, patch_size * patch_size * self.out_channels, data_type=data_type)
-        
-        self.gradient_checkpointing = False
 
         # cache
         self.cache = cache
@@ -216,8 +217,8 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         
         for i in range(len(self.transformer_blocks)):
             #others
-            self.init_weight([f"transformer_blocks.{i}.img_mod.1"], self.transformer_blocks[i].img_mod_proj, self.quant_dtype if self.need_resolve_oom else None)
-            self.init_weight([f"transformer_blocks.{i}.txt_mod.1"], self.transformer_blocks[i].txt_mod_proj, self.quant_dtype if self.need_resolve_oom else None)
+            self.init_weight([f"transformer_blocks.{i}.img_mod.1"], self.transformer_blocks[i].img_mod_proj, self.quant_dtype if self.quant_img_txt_mod else None)
+            self.init_weight([f"transformer_blocks.{i}.txt_mod.1"], self.transformer_blocks[i].txt_mod_proj, self.quant_dtype if self.quant_img_txt_mod else None)
 
             #attention
             self.transformer_blocks[i].attn.norm_q_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_q.weight"])

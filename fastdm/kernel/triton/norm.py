@@ -73,12 +73,12 @@ def rmsnorm_triton(input: torch.Tensor, scale: torch.Tensor, eps: float) -> torc
     Returns:
         torch.Tensor: The normalized tensor.
     """
-    (B, S, head_num, head_dim) = input.shape
+    head_dim = input.shape[-1]
 
     out = torch.empty_like(input)
     input_reshape = input.view(-1, head_dim)
     if scale.ndim == 2:
         scale = scale.view(-1)
-    out = rms_norm(input_reshape, scale, eps).view(-1, S, head_num, head_dim)
+    out = rms_norm(input_reshape, scale, eps).view(input.shape)
 
     return out
