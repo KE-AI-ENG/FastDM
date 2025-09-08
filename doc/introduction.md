@@ -52,6 +52,21 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
     ![image](../assets/cache.PNG)
     参数通过cache-config配置文件传入，具体参数参考[cache config demo](../examples/xcaching/configs)
 
+    具体的cache算法原理可以阅读对应的paper，需要注意的是，每种cache算法在forward过程中会依赖当前的step或者总的step，fastdm中是通过cache_config中的current_steps_callback和total_steps_callback获取的，它俩是一个回调函数。
+
+    在diffusers中，是借助pipeline的scheduler。
+    ```python
+    cache.config.current_steps_callback = lambda: pipe.scheduler.step_index
+    cache.config.total_steps_callback = lambda: pipe.scheduler.timesteps.shape[0]
+    ```
+    在comfyui中，是根据当前的timestep再timesteps中的位置判断。
+    ```python
+    all_steps_sigmas = transformer_options["sample_sigmas"]
+    current_steps_sigmas = transformer_options["sigmas"]
+    self.model.cache.config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+    ```
+        
+
 - 最佳实践：
 
     flux：推荐Dicache, [config](../examples/xcaching/configs/dicache_flux.json);
@@ -64,10 +79,23 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
 
 - 使用示例：
 
-    在examples/demo的gen.py通过参数`--cache-config`配置。例：
+    diffusers中使用，在examples/demo的gen.py通过参数`--cache-config`配置。例：
     ```
     python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world" --cache-config ../xcaching/configs/flux.json
     ```
+
+    comfyui中是通过cache_config dict配置了默认的最佳实践cache算法，只支持配置enabel_caching、cache_threshold等参数。有需要的同学也可以自己修改nodes.py文件，只需要修改cache_config dict即可。
+    ```python
+    cache_config = {
+        "cache_algorithm":"teacache",
+        "enable_caching": use_cache,
+        "threshold": cache_threshold,
+        "negtive_cache": False,
+        "coefficients": [5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01],
+    }
+    cache = AutoCache.from_dict(cache_config)
+    ```
+
 
 
 ### 模型结构

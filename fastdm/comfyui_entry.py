@@ -290,7 +290,8 @@ class ComfyUIFluxForwardWrapper(nn.Module):
         # get current step
         all_steps_sigmas = transformer_options["sample_sigmas"]
         current_steps_sigmas = transformer_options["sigmas"]
-        current_step = (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.config.total_steps_callback = lambda: all_steps_sigmas.shape[0]
 
         # pre-process for input
         # ref https://github.com/comfyanonymous/ComfyUI/blob/3d2e3a6f29670809aa97b41505fa4e93ce11b98d/comfy/ldm/flux/model.py#L191
@@ -356,65 +357,25 @@ class ComfyUIFluxForwardWrapper(nn.Module):
         image_rotary_emb = torch.cat((image_rotary_emb[0][:,0::2], image_rotary_emb[1][:,1::2]), dim=-1).to(hidden_states.dtype)
 
         if self.model.enable_caching:
-            inp = hidden_states.clone()
-            temb_ = temb.clone()
-            modulated_inp, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.model.transformer_blocks[0].norm1.forward(inp, emb=temb_)
-            if current_step == 0:
-                should_calc = True
-                self.model.accumulated_rel_l1_distance = 0
-            else: 
-                coefficients = self.model.cache.coefficients
-                rescale_func = np.poly1d(coefficients)
-                self.model.accumulated_rel_l1_distance += rescale_func(((modulated_inp-self.model.previous_modulated_input).abs().mean() / self.model.previous_modulated_input.abs().mean()).cpu().item())
-                if self.model.accumulated_rel_l1_distance < self.model.cache.threshold:
-                    should_calc = False
-                else:
-                    should_calc = True
-                    self.model.accumulated_rel_l1_distance = 0
-            self.model.previous_modulated_input = modulated_inp 
-
-        if self.model.enable_caching:
-            if not should_calc:
-                hidden_states += self.model.previous_residual
+            if control is not None:
+                controlnet_block_samples = control.get("input") or None
+                controlnet_single_block_samples = control.get("output") or None
             else:
-                ori_hidden_states = hidden_states.clone()
-                for index_block, block in enumerate(self.model.transformer_blocks):
-                    encoder_hidden_states, hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        encoder_hidden_states=encoder_hidden_states,
-                        temb=temb,
-                        image_rotary_emb=image_rotary_emb,
-                        joint_attention_kwargs=joint_attention_kwargs,
-                    )
-
-                    # controlnet residual
-                    if control is not None:
-                        control_i = control.get("input")
-                        if index_block < len(control_i):
-                            add = control_i[index_block]
-                            if add is not None:
-                                hidden_states += add
-
-                hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
-
-                for index_block, block in enumerate(self.model.single_transformer_blocks):
-                    hidden_states = block.forward(
-                        hidden_states=hidden_states,
-                        temb=temb,
-                        image_rotary_emb=image_rotary_emb,
-                        joint_attention_kwargs=joint_attention_kwargs,
-                    )
-
-                    # controlnet residual
-                    if control is not None:
-                        control_o = control.get("output")
-                        if index_block < len(control_o):
-                            add = control_o[index_block]
-                            if add is not None:
-                                hidden_states[:, encoder_hidden_states.shape[1] :, ...] += add
-
-                hidden_states = hidden_states[:, encoder_hidden_states.shape[1] :, ...]
-                self.model.previous_residual = hidden_states - ori_hidden_states
+                controlnet_block_samples = None
+                controlnet_single_block_samples = None
+            hidden_states = self.model.cache.apply_cache(
+                model_type="flux",
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+                attention_kwargs=joint_attention_kwargs,
+                transformer_blocks=self.model.transformer_blocks,
+                single_transformer_blocks=self.model.single_transformer_blocks,
+                controlnet_block_samples=controlnet_block_samples,
+                controlnet_single_block_samples=controlnet_single_block_samples,
+                controlnet_blocks_repeat=False
+            )
         else:
             for index_block, block in enumerate(self.model.transformer_blocks):
                 encoder_hidden_states, hidden_states = block.forward(
@@ -565,7 +526,7 @@ class ComfyUISD35ForwardWrapper(nn.Module):
         # set current steps callback for fastdm cache
         all_steps_sigmas = transformer_options["sample_sigmas"]
         current_steps_sigmas = transformer_options["sigmas"]
-        self.model.cache.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
         
         output = self.model.forward(
             hidden_states=hidden_states,
@@ -637,7 +598,7 @@ class ComfyUIQwenImageForwardWrapper(nn.Module):
         # set current steps callback for fastdm cache
         all_steps_sigmas = transformer_options["sample_sigmas"]
         current_steps_sigmas = transformer_options["sigmas"]
-        self.model.cache.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
+        self.model.cache.config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
         
         output = self.model.forward(
             hidden_states=hidden_states,

@@ -147,6 +147,7 @@ class AutoCache:
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        comfyui: bool = False,
     ):
         raise NotImplementedError("Subclasses must implement apply_cache method")
 
@@ -195,6 +196,7 @@ class TeaCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        comfyui: bool = False,
     ):
         current_step = self.get_current_step()
         modulated_inp = self._get_modulated_input(model_type, hidden_states, encoder_hidden_states, temb, transformer_blocks)
@@ -330,6 +332,7 @@ class FBCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        comfyui: bool = False,
     ):
         current_step = self.get_current_step()
         
@@ -447,6 +450,7 @@ class DiCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        comfyui: bool = False,
     ):
         current_step = self.get_current_step()
         total_steps = self.config.total_steps_callback() if self.config.total_steps_callback() is not None else 25

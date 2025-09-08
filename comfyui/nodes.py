@@ -21,7 +21,7 @@ from fastdm.comfyui_entry import (
     ComfyUIQwenImageForwardWrapper
 )
 from fastdm.kernel.utils import set_global_backend
-from fastdm.caching.xcaching import BaseCache
+from fastdm.caching.xcaching import AutoCache
 
 QUANT_DTYPE_MAP = {
     "int8": torch.int8,
@@ -142,7 +142,7 @@ class FastdmFluxLoader:
                 "kernel_backend": (["torch", "cuda", "triton"], {"default": "cuda"}),
                 "in_channels": ([128, 64],),
                 "use_cache": ("BOOLEAN", {"default": False}),
-                "cache_threshold": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "cache_threshold": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
         }
 
@@ -167,11 +167,14 @@ class FastdmFluxLoader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache = BaseCache(
-            enable_caching=use_cache,
-            threshold=cache_threshold,
-            coefficients=[4.98651651e+02, -2.83781631e+02,  5.58554382e+01, -3.82021401e+00, 2.64230861e-01],
-        )
+        cache_config = {
+            "cache_algorithm":"dicache",
+            "enable_caching": use_cache,
+            "threshold": cache_threshold,
+            "probe_depteh":1,
+            "ret_ratio":0.2
+        }
+        cache = AutoCache.from_dict(cache_config)
 
         fastdm_core_model = FluxTransformer2DModelCore(in_channels=in_channels, 
                                                 out_channels=64, 
@@ -267,7 +270,7 @@ class FastdmSD35Loader:
                 "quant_dtype": (["fp8", "int8", "none"], {"default": "fp8"}),
                 "kernel_backend": (["torch", "cuda", "triton"], {"default": "cuda"}),
                 "use_cache": ("BOOLEAN", {"default": False}),
-                "cache_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "cache_threshold": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
         }
 
@@ -291,11 +294,14 @@ class FastdmSD35Loader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache = BaseCache(
-            enable_caching=use_cache,
-            threshold=cache_threshold,
-            coefficients=[ 5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01],
-        )
+        cache_config = {
+            "cache_algorithm":"teacache",
+            "enable_caching": use_cache,
+            "threshold": cache_threshold,
+            "negtive_cache": False,
+            "coefficients": [5.02516305e+04, -1.71350998e+04,  1.81247682e+03, -6.99267532e+01, 9.39706146e-01],
+        }
+        cache = AutoCache.from_dict(cache_config)
 
         fastdm_core_model = SD3TransformerModelCore(
                                                 data_type=torch.bfloat16, 
@@ -358,13 +364,16 @@ class FastdmQwenImageLoader:
         ckpt_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_model_name)
 
         # cache config
-        cache = BaseCache(
-            enable_caching=use_cache,
-            threshold=cache_threshold,
-            coefficients=[20.04634615, 3.13881129, -11.25528647, 4.70808005, -0.15457715],
-            negtive_cache=True,
-            negtive_coefficients=[ -0.23545113,24.80886833, -19.46151587, 5.9431741, -0.20358595]
-        )
+        cache_config = {
+            "cache_algorithm": "teacache",
+            "enable_caching": use_cache,
+            "threshold": cache_threshold,
+            "negtive_cache": True,
+            "coefficients": [20.04634615, 3.13881129, -11.25528647, 4.70808005, -0.15457715],
+            "negtive_coefficients": [-0.23545113, 24.80886833, -19.46151587, 5.9431741, -0.20358595],
+        }
+        cache = AutoCache.from_dict(cache_config)
+
         fastdm_core_model = QwenImageTransformer2DModelCore(
                                                 data_type=torch.bfloat16, 
                                                 quant_dtype=QUANT_DTYPE_MAP[quant_dtype],
