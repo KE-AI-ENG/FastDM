@@ -78,7 +78,8 @@ if __name__ == "__main__":
             gen_seed=args.seed,
             gen_width=args.width,
             gen_height=args.height,
-            max_seq_len=args.max_seq_len
+            max_seq_len=args.max_seq_len,
+            true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None
         )
     
     # 生成
@@ -92,7 +93,8 @@ if __name__ == "__main__":
                 gen_seed=args.seed,
                 gen_width=args.width,
                 gen_height=args.height,
-                max_seq_len=args.max_seq_len)
+                max_seq_len=args.max_seq_len,
+                true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None)
     torch.cuda.synchronize()
     generation_time = time.time() - gen_start_time
     print(f"Generation latency: {generation_time:.4f} seconds")

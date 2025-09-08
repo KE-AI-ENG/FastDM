@@ -82,7 +82,7 @@ examples包括Text2Image, LORA, Image-Editing, Controlnet等demo, 以下例程�
 
 Qwen-Image模型通常需要五六十GB显存才可以运行, FLUX模型需要>24GB, 否则会OOM。可以配置`--oom-resolve`，使其只需20多GB显存即可运行，这样A100和4090/4090D，RTX-8000等小显存的卡就都可以支持。注意该模式将text-encode部分在cpu运行，会拖慢生成速度。qwen-image模型在<24GB显存卡上会量化更多部分，影响一些生成效果。
 
-`python gen.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --output-path ./qwen-int8-tmp.png --oom-resolve --cache-config ../xcaching/configs/qwenimage.json --width 768 --height 768`
+`python gen.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --output-path ./qwen-int8-tmp.png --oom-resolve --cache-config ../xcaching/configs/teacache_qwenimage.json --width 768 --height 768`
 
 **注**: 这种模式下生成图片尺寸建议小于768x768，否则vae部分也会占用很多显存，造成OOM。
 

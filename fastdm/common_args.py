@@ -17,6 +17,7 @@ def add_common_args(parser):
     # 生成参数
     parser.add_argument('--steps', type=int, default=25, help="Inference steps")
     parser.add_argument('--guidance-scale', type=float, default=3.5, help="guidance scale")
+    parser.add_argument('--true-cfg-scale', type=float, default=4.0, help="true cfg scale")
     parser.add_argument('--seed', type=int, default=0, help="generation seed")
     parser.add_argument('--device', type=int, default=0, help="device number")
     parser.add_argument('--num-warmup-runs', type=int, default=0, help="Number of warmup runs")

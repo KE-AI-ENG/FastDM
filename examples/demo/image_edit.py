@@ -9,7 +9,7 @@ from fastdm.model_entry import FastDMEngine
 
 if __name__ == "__main__":
 
-    args = get_image_edit_parser().parseArgs()
+    args = get_image_edit_parser().parse_args()
 
     if args.use_diffusers:
         pass
@@ -51,10 +51,13 @@ if __name__ == "__main__":
         engine.generate(
             prompt=args.prompts,
             negative_prompt=args.negative_prompts,
-            image=src_image,
+            src_image=src_image,
             steps=args.steps,
             guidance_scale=args.guidance_scale,
-            gen_seed=args.seed
+            gen_seed=args.seed,
+            gen_width=args.width,
+            gen_height=args.height,
+            true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None
         )
 
     # 生成
@@ -62,10 +65,13 @@ if __name__ == "__main__":
     output = engine.generate(
         prompt=args.prompts,
         negative_prompt=args.negative_prompts,
-        image=src_image,
+        src_image=src_image,
         steps=args.steps,
         guidance_scale=args.guidance_scale,
-        gen_seed=args.seed
+        gen_seed=args.seed,
+        gen_width=args.width,
+        gen_height=args.height,
+        true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None
     )
     torch.cuda.synchronize()
     print(f"inference time: {time.time() - gen_start_time}s")

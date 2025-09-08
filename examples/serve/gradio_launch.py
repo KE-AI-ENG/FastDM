@@ -166,7 +166,14 @@ def generate_image_from_prompt(prompt,
             input_image = input_image.convert("RGB")  # 确保RGB格式
 
     try:
-        image = engine_.generate(prompt, src_image=input_image, gen_seed=seed if seed>=0 else torch.randint(0, 10000, (1,)).item(), steps=steps, gen_width=width, gen_height=height, guidance_scale=cfg_scale)
+        image = engine_.generate(prompt, 
+                                 src_image=input_image, 
+                                 gen_seed=seed if seed>=0 else torch.randint(0, 10000, (1,)).item(), 
+                                 steps=steps, 
+                                 gen_width=width, 
+                                 gen_height=height, 
+                                 guidance_scale=None if engine_.architecture == "qwen" else cfg_scale, 
+                                 true_cfg_scale=cfg_scale if engine_.architecture == "qwen" else None)
         return image
     except Exception as e:
         print(f"生成失败: {e}")
