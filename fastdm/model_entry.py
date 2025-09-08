@@ -99,6 +99,7 @@ class FluxTransformerWrapper(BaseModelWrapper):
         dtype: torch.dtype = torch.bfloat16, 
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
+        need_resolve_oom=False,
         cache: AutoCache = None,
         **kwargs
     ):
@@ -111,7 +112,7 @@ class FluxTransformerWrapper(BaseModelWrapper):
             guidance_embeds=True,
             dtype=dtype
         )
-        
+        self.need_resolve_oom = need_resolve_oom
         self.dtype = dtype
         self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
@@ -124,6 +125,7 @@ class FluxTransformerWrapper(BaseModelWrapper):
             data_type=self.config.dtype,
             quant_dtype=quant_type,
             cache=cache,
+            oom_ressolve=self.need_resolve_oom,
             **kwargs
         )
         
@@ -366,6 +368,7 @@ class FluxControlnetWrapper(BaseModelWrapper):
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
         cache = None,
+        need_resolve_oom=False,
         **kwargs
     ):
         super().__init__(kernel_backend)
@@ -378,7 +381,7 @@ class FluxControlnetWrapper(BaseModelWrapper):
             dtype=dtype
         )
         self.input_hint_block = None
-        
+        self.need_resolve_oom = need_resolve_oom
         self.dtype = dtype
         self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
@@ -390,6 +393,7 @@ class FluxControlnetWrapper(BaseModelWrapper):
             guidance_embeds=self.config.guidance_embeds, 
             data_type=self.config.dtype,
             quant_dtype=quant_type,
+            oom_ressolve=self.need_resolve_oom,
             **kwargs
         )
         

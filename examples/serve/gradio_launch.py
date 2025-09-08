@@ -25,7 +25,7 @@ def parseArgs():
     parser.add_argument('--data-type', default="bfloat16", help="data type")
     parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd3/qwen")
 
-    parser.add_argument('--qwen-oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
+    parser.add_argument('--oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
 
     # caching args
     parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
@@ -43,7 +43,7 @@ class FastDMEngine:
                  kernel_backend="cuda", 
                  architecture="flux", 
                  cache_config=None,
-                 qwen_oom_resolve=False):
+                 oom_resolve=False):
 
         torch.cuda.set_device(device_num)
 
@@ -68,7 +68,16 @@ class FastDMEngine:
                                          dtype=data_type, 
                                          quant_type=quant_type, 
                                          kernel_backend=kernel_backend,
-                                         cache=cache).eval()
+                                         cache=cache,
+                                         need_resolve_oom=oom_resolve).eval()
+            if args.oom_resolve:
+                import os
+                import sys
+                from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
+                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+                from utils.flux_vae import flux_vae_new_encode, flux_vae_new_decode
+                AutoencoderKL._decode = flux_vae_new_decode
+                AutoencoderKL._encode = flux_vae_new_encode
         elif "sd3" == architecture:
             self.pipe.transformer = create_model("sd35",
                                          ckpt_path = self.pipe.transformer.state_dict(),
@@ -83,8 +92,8 @@ class FastDMEngine:
                                          quant_type=quant_type, 
                                          kernel_backend=kernel_backend,
                                          cache=cache,
-                                         need_resolve_oom=qwen_oom_resolve).eval()
-            if qwen_oom_resolve:
+                                         need_resolve_oom=oom_resolve).eval()
+            if oom_resolve:
                 import os
                 import sys
                 from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
@@ -97,7 +106,7 @@ class FastDMEngine:
                 f"The {architecture} model is not supported!!!"
             )
 
-        if "qwen" == architecture and qwen_oom_resolve:
+        if ("qwen" == args.architecture or "flux" == args.architecture) and args.oom_resolve:
             self.pipe.vae.to("cuda")
         else:
             self.pipe.to(f"cuda")
@@ -240,7 +249,7 @@ engine_ = FastDMEngine(model_path=args.model_path,
                        kernel_backend=args.kernel_backend, 
                        architecture=args.architecture, 
                        cache=args.cache_config,
-                       qwen_oom_resolve=args.qwen_oom_resolve)
+                       oom_resolve=args.oom_resolve)
 
 # 图片生成函数
 def generate_image_from_prompt(prompt,

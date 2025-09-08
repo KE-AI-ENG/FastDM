@@ -219,8 +219,12 @@ class FluxTransformer2DModelCore(BaseModelCore):
         data_type = torch.bfloat16,
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
         cache: AutoCache = None,
+        oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
     ):
         super().__init__(type="DiT")
+
+        self.need_resolve_oom = oom_ressolve
+
         self.out_channels = out_channels
         self.inner_dim = num_attention_heads * attention_head_dim
 
@@ -370,6 +374,22 @@ class FluxTransformer2DModelCore(BaseModelCore):
             If `return_dict` is True, an [`~models.transformer_2d.Transformer2DModelOutput`] is returned, otherwise a
             `tuple` where the first element is the sample tensor.
         """
+
+        if self.need_resolve_oom: #need copy tensor to gpu
+            hidden_states = hidden_states.to(self.device)
+            if encoder_hidden_states is not None:
+                encoder_hidden_states = encoder_hidden_states.to(self.device)
+            if pooled_projections is not None:
+                pooled_projections = pooled_projections.to(self.device)
+            if timestep is not None:
+                timestep = timestep.to(self.device)
+            if img_ids is not None:
+                img_ids = img_ids.to(self.device)
+            if txt_ids is not None:
+                txt_ids = txt_ids.to(self.device)
+            if guidance is not None:
+                guidance = guidance.to(self.device)
+
         if joint_attention_kwargs is not None:
             joint_attention_kwargs = joint_attention_kwargs.copy()
             lora_scale = joint_attention_kwargs.pop("scale", 1.0)
@@ -470,4 +490,7 @@ class FluxTransformer2DModelCore(BaseModelCore):
 
         output = self.proj_out.forward(hidden_states)
 
+        if self.need_resolve_oom:
+            output = output.to("cpu")
+            
         return (output,)

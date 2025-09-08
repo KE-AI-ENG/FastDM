@@ -10,7 +10,9 @@
 
 `python gradio_launch.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --device 0 --cache-config ../xcaching/configs/qwenimage.json --port 7890`
 
-对于Qwen-Image模型，配置`--qwen-oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768), 小于24GB显存的卡上, 会触发更多部分的量化以进一步减少显存占用, 实测发现这会造成一些生成效果的影响。如果使用显存较大的卡，不建议使能该选项。
+对于Qwen-Image/FLUX模型，配置`--oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768)。此模式会影响生成速度，如使用较大显存的卡，不建议使能该选项。 
+
+对于Qwen模型，小于24GB显存的卡上, 会触发更多部分的量化以进一步减少显存占用, 实测发现这会造成一些生成效果的影响。
 
 server启动之后在浏览器中打开 http://localhost:7890 即可访问服务(如下图所示)。
 
@@ -24,7 +26,7 @@ server启动之后在浏览器中打开 http://localhost:7890 即可访问服务
 
 注意这需要载入[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)或[FLUX-Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev)模型，使用文生图模型会报error。
 
-图片编辑模式不建议开启`--qwen-oom-resolve`，因为这样会把text_encoder部分在cpu运行，非常慢。
+图片编辑模式不建议开启`--oom-resolve`，因为这样会把image_encoder部分也在cpu运行，非常慢。
 
 最近很火的nano-banana一种玩法就是多图编辑。FastDM也支持该模式，比如让大幂幂穿上一件粉色T恤：
 

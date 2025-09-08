@@ -32,7 +32,7 @@ def parseArgs():
     parser.add_argument('--use-int8', action='store_true', help="Enable int8 model inference")
     parser.add_argument('--kernel-backend', default="cuda", help="kernel backend: torch/triton/cuda")
 
-    parser.add_argument('--qwen-oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
+    parser.add_argument('--oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image/flux model if set to true")
 
     parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
 
@@ -84,8 +84,8 @@ if __name__ == "__main__":
                                             quant_type=quant_type, 
                                             kernel_backend=args.kernel_backend,
                                             cache=cache, 
-                                            need_resolve_oom=args.qwen_oom_resolve).eval()
-            if args.qwen_oom_resolve:
+                                            need_resolve_oom=args.oom_resolve).eval()
+            if args.oom_resolve:
                 import os
                 import sys
                 from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
@@ -98,9 +98,18 @@ if __name__ == "__main__":
                                             ckpt_path = pipe.transformer.state_dict(),
                                             quant_type=quant_type, 
                                             kernel_backend=args.kernel_backend,
-                                            cache=cache).eval()            
+                                            cache=cache,
+                                            need_resolve_oom=args.oom_resolves).eval()
+            if args.oom_resolve:
+                import os
+                import sys
+                from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
+                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+                from utils.flux_vae import flux_vae_new_encode, flux_vae_new_decode
+                AutoencoderKL._decode = flux_vae_new_decode
+                AutoencoderKL._encode = flux_vae_new_encode        
 
-    if is_qwen_img and args.qwen_oom_resolve:
+    if args.oom_resolve:
         pipe.vae.to("cuda")
     else:
         pipe.to(f"cuda")

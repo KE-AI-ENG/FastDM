@@ -753,9 +753,13 @@ class FluxControlNetModelCore(BaseModelCore):
         num_mode: int = None,
         conditioning_embedding_channels: int = None,
         data_type = torch.bfloat16,
-        quant_dtype = torch.float8_e4m3fn
+        quant_dtype = torch.float8_e4m3fn,
+        oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
     ):
         super().__init__(type="DiT")
+
+        self.need_resolve_oom = oom_ressolve
+
         self.out_channels = in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
 
@@ -932,6 +936,25 @@ class FluxControlNetModelCore(BaseModelCore):
         """
         # current implementation controlnt not support lora
 
+        if self.need_resolve_oom: #need copy tensor to gpu
+            hidden_states = hidden_states.to(self.device)
+            controlnet_cond = controlnet_cond.to(self.device)
+            conditioning_scale = conditioning_scale.to(self.device)
+            if controlnet_mode is not None:
+                controlnet_mode = controlnet_mode.to(self.device)
+            if encoder_hidden_states is not None:
+                encoder_hidden_states = encoder_hidden_states.to(self.device)
+            if pooled_projections is not None:
+                pooled_projections = pooled_projections.to(self.device)
+            if timestep is not None:
+                timestep = timestep.to(self.device)
+            if img_ids is not None:
+                img_ids = img_ids.to(self.device)
+            if txt_ids is not None:
+                txt_ids = txt_ids.to(self.device)
+            if guidance is not None:
+                guidance = guidance.to(self.device)
+
         hidden_states = self.x_embedder.forward(hidden_states)
 
         if self.input_hint_block is not None:
@@ -1016,4 +1039,8 @@ class FluxControlNetModelCore(BaseModelCore):
             None if len(controlnet_single_block_samples) == 0 else controlnet_single_block_samples
         )
  
+        if self.need_resolve_oom:
+            controlnet_block_samples = controlnet_block_samples.to("cpu")
+            controlnet_single_block_samples = controlnet_single_block_samples.to("cpu")
+
         return (controlnet_block_samples, controlnet_single_block_samples)
