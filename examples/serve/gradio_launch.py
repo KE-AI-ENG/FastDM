@@ -1,129 +1,11 @@
-import gc
-import argparse
-
 import numpy as np
 from PIL import Image
 
 import gradio as gr
 import torch
-from diffusers import DiffusionPipeline
 
-from fastdm.model_entry import create_model
-from fastdm.caching.xcaching import AutoCache
-
-def parseArgs():
-    parser = argparse.ArgumentParser(description="Options for FastDM Server", conflict_handler='resolve')
-    parser.add_argument('--steps', type=int, default=25, help="Inference steps")
-    parser.add_argument('--device', type=int, default=0, help="device number")
-
-    parser.add_argument('--use-fp8', action='store_true', help="Enable fp8 model inference")
-    parser.add_argument('--use-int8', action='store_true', help="Enable int8 model inference")
-    parser.add_argument('--kernel-backend', default="cuda", help="kernel backend: torch/triton/cuda")
-
-    parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
-
-    parser.add_argument('--data-type', default="bfloat16", help="data type")
-    parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd3/qwen")
-
-    parser.add_argument('--oom-resolve', action='store_true', help="It can resolve OOM error of qwen-image model if set to true")
-
-    # caching args
-    parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
-
-    parser.add_argument('--port', type=int, default=7890, help="server ssh port number")
-
-    return parser.parse_args()
-
-class FastDMEngine:
-    def __init__(self, 
-                 model_path, 
-                 data_type=torch.bfloat16, 
-                 device_num=0, 
-                 quant_type=torch.float8_e4m3fn, 
-                 kernel_backend="cuda", 
-                 architecture="flux", 
-                 cache_config=None,
-                 oom_resolve=False):
-
-        torch.cuda.set_device(device_num)
-
-        self.pipe = DiffusionPipeline.from_pretrained(model_path, torch_dtype=data_type, use_safetensors=True)
-
-        if cache_config is not None:
-            cache = AutoCache.from_json(cache_config)
-            cache.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
-            cache.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0] # used by dicache
-        else:
-            cache = None
-
-        if "sdxl" == architecture:
-           self.pipe.unet = create_model("sdxl",
-                                         ckpt_path = self.pipe.unet.state_dict(),
-                                         dtype=data_type, 
-                                         quant_type=quant_type, 
-                                         kernel_backend=kernel_backend).eval()
-        elif "flux" == architecture:
-            self.pipe.transformer = create_model("flux",
-                                         ckpt_path = self.pipe.transformer.state_dict(),
-                                         dtype=data_type, 
-                                         quant_type=quant_type, 
-                                         kernel_backend=kernel_backend,
-                                         cache=cache,
-                                         need_resolve_oom=oom_resolve).eval()
-            if args.oom_resolve:
-                import os
-                import sys
-                from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
-                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-                from utils.flux_vae import flux_vae_new_encode, flux_vae_new_decode
-                AutoencoderKL._decode = flux_vae_new_decode
-                AutoencoderKL._encode = flux_vae_new_encode
-        elif "sd3" == architecture:
-            self.pipe.transformer = create_model("sd35",
-                                         ckpt_path = self.pipe.transformer.state_dict(),
-                                         dtype=data_type, 
-                                         quant_type=quant_type, 
-                                         kernel_backend=kernel_backend,
-                                         cache=cache).eval()
-        elif "qwen" == architecture:
-            self.pipe.transformer = create_model("qwen",
-                                         ckpt_path = self.pipe.transformer.state_dict(),
-                                         dtype=data_type, 
-                                         quant_type=quant_type, 
-                                         kernel_backend=kernel_backend,
-                                         cache=cache,
-                                         need_resolve_oom=oom_resolve).eval()
-            if oom_resolve:
-                import os
-                import sys
-                from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
-                sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-                from utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
-                AutoencoderKLQwenImage._decode = qwen_vae_new_decode
-                AutoencoderKLQwenImage._encode = qwen_vae_new_encode
-        else:
-            raise ValueError(
-                f"The {architecture} model is not supported!!!"
-            )
-
-        if ("qwen" == args.architecture or "flux" == args.architecture) and args.oom_resolve:
-            self.pipe.vae.to("cuda")
-        else:
-            self.pipe.to(f"cuda")
-
-    def generate(self, prompt_text, src_image=None, gen_seed=42, inf_step=25, gen_width=2048, gen_height=1024, max_len=512, guidance=3.5):
-
-        gen = torch.Generator().manual_seed(gen_seed)
-
-        if src_image is None:
-            images = self.pipe(prompt=prompt_text, num_inference_steps=inf_step, generator=gen, width=gen_width, height=gen_height, guidance_scale=guidance, max_sequence_length=max_len).images[0]
-        else:
-            images = self.pipe(prompt=prompt_text, image=src_image, num_inference_steps=inf_step, generator=gen, width=gen_width, height=gen_height, guidance_scale=guidance, max_sequence_length=max_len).images[0]
-        
-        torch.cuda.empty_cache()
-        gc.collect()
-        
-        return images
+from fastdm.common_args import get_gradio_parser
+from fastdm.model_entry import FastDMEngine
 
 #多图片处理函数
 def process_multiple_images(images, blend_mode="concatenate", concat_direction="horizontal"):
@@ -240,16 +122,18 @@ def concatenate_images(images, direction="horizontal"):
     
     return images[0]
 
-args = parseArgs()
-torch.cuda.set_device(args.device)
-engine_ = FastDMEngine(model_path=args.model_path, 
-                       data_type=torch.bfloat16 if "bfloat16"==args.data_type else torch.float16, 
-                       device_num=args.device, 
-                       quant_type=torch.float8_e4m3fn if args.use_fp8 else (torch.int8 if args.use_int8 else None),
-                       kernel_backend=args.kernel_backend, 
-                       architecture=args.architecture, 
-                       cache_config=args.cache_config,
-                       oom_resolve=args.oom_resolve)
+args = get_gradio_parser().parse_args()
+engine_ = FastDMEngine(
+            model_path=args.model_path,
+            architecture=args.architecture,
+            device=args.device,
+            data_type=args.data_type,
+            use_fp8=args.use_fp8,
+            use_int8=args.use_int8,
+            kernel_backend=args.kernel_backend,
+            cache_config=args.cache_config,
+            oom_resolve=args.oom_resolve,
+            use_diffusers=args.use_diffusers)
 
 # 图片生成函数
 def generate_image_from_prompt(prompt,
@@ -261,8 +145,7 @@ def generate_image_from_prompt(prompt,
                                 seed=-1,
                                 sampler="Euler a",
                                 width=512,
-                                height=512,
-                                pipeline=None):
+                                height=512):
     """
     调用推理引擎生成图片，支持多图片输入
     返回PIL图像对象或文件路径
@@ -283,7 +166,14 @@ def generate_image_from_prompt(prompt,
             input_image = input_image.convert("RGB")  # 确保RGB格式
 
     try:
-        image = engine_.generate(prompt, src_image=input_image, gen_seed=seed if seed>=0 else torch.randint(0, 10000, (1,)).item(), inf_step=steps, gen_width=width, gen_height=height, guidance=cfg_scale)
+        image = engine_.generate(prompt, 
+                                 src_image=input_image, 
+                                 gen_seed=seed if seed>=0 else torch.randint(0, 10000, (1,)).item(), 
+                                 steps=steps, 
+                                 gen_width=width, 
+                                 gen_height=height, 
+                                 guidance_scale=None if engine_.architecture == "qwen" else cfg_scale, 
+                                 true_cfg_scale=cfg_scale if engine_.architecture == "qwen" else None)
         return image
     except Exception as e:
         print(f"生成失败: {e}")

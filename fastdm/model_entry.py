@@ -5,13 +5,14 @@ Diffusers pipeline model entry
 import os
 import json
 import types
+import gc
 from contextlib import contextmanager
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-from collections import namedtuple
 
 import torch
 import torch.nn as nn
+
+from diffusers import DiffusionPipeline, WanPipeline, AutoencoderKLWan
 
 from fastdm.model.sdxl import SDXLUNetModelCore
 from fastdm.model.sd35 import SD3TransformerModelCore
@@ -198,6 +199,7 @@ class SD35TransformerWrapper(BaseModelWrapper):
         dtype: torch.dtype = torch.bfloat16, 
         quant_type: Optional[torch.dtype] = None, 
         kernel_backend: str = "torch",
+        need_resolve_oom=False,
         cache = None,
         **kwargs
     ):
@@ -516,3 +518,224 @@ def list_available_models() -> List[str]:
     
 #     # List all available models
 #     print("Available models:", list_available_models())
+
+class FastDMEngine:
+    """FastDM Inference Engine"""
+    
+    def __init__(self,
+                 model_path,
+                 architecture="sdxl",
+                 device=0,
+                 data_type="bfloat16",
+                 use_fp8=False,
+                 use_int8=False,
+                 kernel_backend="cuda",
+                 cache_config=None,
+                 oom_resolve=False,
+                 use_diffusers = True):
+        """
+        初始化 FastDM 引擎
+        
+        Args:
+            model_path: 模型路径
+            architecture: 模型架构 (sdxl/flux/sd3/qwen/wan)
+            device: GPU设备号
+            data_type: 数据类型 (float16/bfloat16)
+            use_fp8: 是否使用 FP8
+            use_int8: 是否使用 INT8
+            kernel_backend: 后端类型 (cuda/triton/torch)
+            cache_config: 缓存配置文件路径
+            oom_resolve: 是否启用 OOM 解决方案
+        """
+        self.architecture = architecture
+        self.device = device
+        self.oom_resolve = oom_resolve
+        self.use_diffusers = use_diffusers
+        
+        # 设置设备
+        torch.cuda.set_device(device)
+        
+        # 设置数据类型
+        self.dtype = torch.bfloat16 if data_type == "bfloat16" else torch.float16
+        
+        # 设置量化类型
+        if use_fp8:
+            self.quant_type = torch.float8_e4m3fn
+        elif use_int8:
+            self.quant_type = torch.int8
+        else:
+            self.quant_type = None
+            
+        # 初始化caching
+        if cache_config:
+            self.cache = AutoCache.from_json(cache_config)
+        else:
+            self.cache = None
+            
+        # 初始化模型
+        self._init_model(model_path, kernel_backend)
+        
+    def _init_model(self, model_path, kernel_backend):
+        """初始化模型"""
+        if self.architecture == "wan":
+            vae = AutoencoderKLWan.from_pretrained(
+                model_path, 
+                subfolder="vae",
+                torch_dtype=torch.float32
+            )
+            self.pipe = WanPipeline.from_pretrained(
+                model_path,
+                vae=vae,
+                torch_dtype=torch.bfloat16
+            )
+        else:
+            self.pipe = DiffusionPipeline.from_pretrained(
+                model_path,
+                torch_dtype=self.dtype,
+                use_safetensors=True
+            )
+        
+        if self.use_diffusers:
+            self.pipe.to("cuda")
+        else:
+            self.model_path = model_path
+
+            # 设置caching回调
+            if self.cache:
+                self.cache.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
+                self.cache.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0]
+                
+            # 替换模型实现
+            if self.architecture == "sdxl":
+                self.pipe.unet = create_model(
+                    "sdxl",
+                    ckpt_path=self.pipe.unet.state_dict(),
+                    dtype=self.dtype,
+                    quant_type=self.quant_type,
+                    kernel_backend=kernel_backend
+                ).eval()
+
+            elif self.architecture in ["flux", "sd35", "qwen"]:
+                model_type = self.architecture
+
+                self.pipe.transformer = create_model(
+                    model_type,
+                    ckpt_path=self.pipe.transformer.state_dict(),
+                    dtype=self.dtype,
+                    quant_type=self.quant_type,
+                    kernel_backend=kernel_backend,
+                    cache=self.cache,
+                    need_resolve_oom=self.oom_resolve,
+                ).eval()
+                
+                # 处理 OOM
+                if self.oom_resolve and model_type in ["qwen", "flux"]:
+                    self._setup_oom_resolve(model_type)
+
+            elif "wan" == self.architecture:
+                self.pipe.transformer = create_model("wan", 
+                                ckpt_path=self.pipe.transformer.state_dict(), 
+                                dtype=self.dtype, 
+                                quant_type=self.quant_type, 
+                                kernel_backend=kernel_backend, 
+                                config_json=f"{self.model_path}/transformer/config.json",
+                                cache=self.cache).eval()
+                if hasattr(self.pipe, 'transformer_2') and self.pipe.transformer_2 is not None:
+                    self.pipe.transformer_2 = create_model("wan", 
+                                    ckpt_path=self.pipe.transformer_2.state_dict(), 
+                                    dtype=self.dtype, 
+                                    quant_type=self.quant_type, 
+                                    kernel_backend=kernel_backend, 
+                                    config_json=f"{self.model_path}/transformer_2/config.json",
+                                    cache=self.cache).eval()
+            else:
+                raise ValueError(
+                    f"The {self.architecture} model is not supported!!!"
+                )
+            
+            # 设置设备
+            if self.oom_resolve and self.architecture in ["qwen", "flux"]:
+                self.pipe.vae.to("cuda")
+            else:
+                self.pipe.to("cuda")
+                
+            # 清理缓存
+            torch.cuda.empty_cache()
+            gc.collect()
+        
+    def _setup_oom_resolve(self, model_type):
+        """设置 OOM 解决方案"""
+        if model_type == "qwen":
+            from diffusers.models.autoencoders.autoencoder_kl_qwenimage import AutoencoderKLQwenImage
+            from fastdm.utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
+            AutoencoderKLQwenImage._decode = qwen_vae_new_decode
+            AutoencoderKLQwenImage._encode = qwen_vae_new_encode
+        else:  # flux
+            from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
+            from fastdm.utils.flux_vae import flux_vae_new_decode, flux_vae_new_encode
+            AutoencoderKL._decode = flux_vae_new_decode
+            AutoencoderKL._encode = flux_vae_new_encode
+            
+    def generate(self,
+                prompt,
+                negative_prompt=None,
+                src_image=None,
+                num_frames=None,
+                steps=50,
+                guidance_scale=3.5,
+                true_cfg_scale=None,
+                gen_seed=42,
+                gen_width=512,
+                gen_height=512,
+                max_seq_len=512):
+        """
+        生成图像或视频
+        
+        Args:
+            prompt: 提示词
+            negative_prompt: 负面提示词
+            src_image: 输入图像
+            num_frames: 视频帧数
+            fps: 视频帧率
+            steps: 推理步数
+            guidance_scale: 引导系数
+            true_cfg_scale: QWen模型的引导系数
+            gen_seed: 随机种子
+            gen_width: 生成宽度
+            gen_height: 生成高度
+            max_seq_len: 最大序列长度
+            
+        Returns:
+            生成的图像或视频帧
+        """
+        gen = torch.Generator().manual_seed(gen_seed)
+        
+        kwargs = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "num_inference_steps": steps,
+            "generator": gen,
+            "width": gen_width,
+            "height": gen_height,
+            "max_sequence_length": max_seq_len
+        }
+        
+        # 处理特殊参数
+        if src_image is not None:
+            kwargs["image"] = src_image
+            
+        if num_frames is not None:
+            kwargs["num_frames"] = num_frames
+            
+        if true_cfg_scale is not None:  # QWen
+            kwargs["true_cfg_scale"] = true_cfg_scale
+        else:
+            kwargs["guidance_scale"] = guidance_scale
+            
+        # 生成
+        with torch.inference_mode():
+            output = self.pipe(**kwargs)
+            
+        if num_frames is not None:
+            return output.frames[0]
+        return output.images[0]

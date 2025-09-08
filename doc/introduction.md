@@ -81,7 +81,7 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
 
     diffusers中使用，在examples/demo的gen.py通过参数`--cache-config`配置。例：
     ```
-    python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world" --cache-config ../xcaching/configs/flux.json
+    python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world" --cache-config ../xcaching/configs/dicache_flux.json
     ```
 
     comfyui中是通过cache_config dict配置了默认的最佳实践cache算法，只支持配置enabel_caching、cache_threshold等参数。有需要的同学也可以自己修改nodes.py文件，只需要修改cache_config dict即可。

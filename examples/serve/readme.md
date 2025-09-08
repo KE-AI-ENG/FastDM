@@ -8,7 +8,7 @@
 
 ### launch server:
 
-`python gradio_launch.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --device 0 --cache-config ../xcaching/configs/qwenimage.json --port 7890`
+`python gradio_launch.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --device 0 --cache-config ../xcaching/configs/teacache_qwenimage.json --port 7890`
 
 对于Qwen-Image/FLUX模型，配置`--oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768)。此模式会影响生成速度，如使用较大显存的卡，不建议使能该选项。 
 
@@ -30,6 +30,6 @@ server启动之后在浏览器中打开 http://localhost:7890 即可访问服务
 
 最近很火的nano-banana一种玩法就是多图编辑。FastDM也支持该模式，比如让大幂幂穿上一件粉色T恤：
 
-`python gradio_launch.py --model-path /path/to/FLUX.1-Kontext-dev --use-int8 --architecture flux --device 0 --cache-config ../xcaching/configs/flux.json --port 7891`
+`python gradio_launch.py --model-path /path/to/FLUX.1-Kontext-dev --use-int8 --architecture flux --device 0 --cache-config ../xcaching/configs/dicache_flux.json --port 7891`
 
 ![image](../../assets/multi-image.PNG)

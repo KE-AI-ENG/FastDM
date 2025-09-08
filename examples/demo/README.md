@@ -14,5 +14,5 @@ python controlnet_demo.py --model_type flux --model_path FLUX/FLUX.1-dev --contr
 
 - use cache
 ```bash
-python controlnet_demo.py --model_type flux --model_path FLUX/FLUX.1-dev --controlnet_model  jasperai/Flux.1-dev-Controlnet-Upscaler --control_image flux_controlnet_test.png --cache-config ../xcaching/configs/flux.json
+python controlnet_demo.py --model_type flux --model_path FLUX/FLUX.1-dev --controlnet_model  jasperai/Flux.1-dev-Controlnet-Upscaler --control_image flux_controlnet_test.png --cache-config ../xcaching/configs/dicache_flux.json
 ```
