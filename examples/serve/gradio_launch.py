@@ -248,7 +248,7 @@ engine_ = FastDMEngine(model_path=args.model_path,
                        quant_type=torch.float8_e4m3fn if args.use_fp8 else (torch.int8 if args.use_int8 else None),
                        kernel_backend=args.kernel_backend, 
                        architecture=args.architecture, 
-                       cache=args.cache_config,
+                       cache_config=args.cache_config,
                        oom_resolve=args.oom_resolve)
 
 # 图片生成函数
