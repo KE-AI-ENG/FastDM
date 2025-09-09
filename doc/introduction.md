@@ -65,7 +65,7 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
     current_steps_sigmas = transformer_options["sigmas"]
     self.model.cache.config.current_steps_callback = lambda: (all_steps_sigmas == current_steps_sigmas).nonzero().item()
     ```
-        
+
 
 - 最佳实践：
 
