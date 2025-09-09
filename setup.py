@@ -112,7 +112,7 @@ compile_args = gen_compile_args_from_compute_cap(major, minor)
 
 setup(
     name="fastdm",
-    version="1.0",
+    version="1.1",
     author="KE-MLSys",
     license="MIT License",
     description=("A lightweight and concise implementation of Diffusion Models Inference"),

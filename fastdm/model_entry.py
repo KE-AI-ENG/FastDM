@@ -569,6 +569,8 @@ class FastDMEngine:
         # 初始化caching
         if cache_config:
             self.cache = AutoCache.from_json(cache_config)
+            if architecture == "wan":
+                self.cache_2 = AutoCache.from_json(cache_config)
         else:
             self.cache = None
             
@@ -604,6 +606,9 @@ class FastDMEngine:
             if self.cache:
                 self.cache.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
                 self.cache.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0]
+                if self.architecture == "wan": # wan model use diff cache for low noise and high noise
+                    self.cache_2.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
+                    self.cache_2.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0]
                 
             # 替换模型实现
             if self.architecture == "sdxl":
@@ -647,7 +652,7 @@ class FastDMEngine:
                                     quant_type=self.quant_type, 
                                     kernel_backend=kernel_backend, 
                                     config_json=f"{self.model_path}/transformer_2/config.json",
-                                    cache=self.cache).eval()
+                                    cache=self.cache_2).eval()
             else:
                 raise ValueError(
                     f"The {self.architecture} model is not supported!!!"

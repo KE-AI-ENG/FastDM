@@ -11,7 +11,7 @@ def add_common_args(parser):
     parser.add_argument('--oom-resolve', action='store_true', help="resolve OOM error")
     parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
     parser.add_argument('--data-type', default="bfloat16", help="data type: bfloat16/float16")
-    parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd35/qwen")
+    parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd35/qwen/sdxl-controlnet/flux-controlnet")
     parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
 
     # 生成参数
@@ -41,6 +41,16 @@ def get_image_edit_parser():
     parser = argparse.ArgumentParser(description="Options for Image Editing")
     add_common_args(parser)
     parser.add_argument('--image-path', type=str, required=True, help="input image path")
+    return parser
+
+def get_conrolnet_parser():
+    """ControlNet的参数解析器"""
+    parser = argparse.ArgumentParser(description="Options for ControlNet Generation")
+    add_common_args(parser)
+    parser.add_argument('--controlnet-model', type=str,required=True, help="ControlNet model path")
+    parser.add_argument('--control-image-path', type=str, required=True, help="input control image path")
+    parser.add_argument('--vae-model', type=str, default='madebyollin/sdxl-vae-fp16-fix', help="VAE model path")
+    parser.add_argument('--controlnet-scale', type=float, default=1.0, help="ControlNet conditioning scale")
     return parser
 
 def get_gradio_parser():
