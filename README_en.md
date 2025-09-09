@@ -2,9 +2,13 @@
 
 Fast Diffusion Models(FASTDM): A lightweight and concise implementation of Diffusion Models. It supports mainstream text-to-image/video model architectures, integrates with ComfyUI, and is compatible with various GPU architectures.
 
-FastDM also optimizes GPU memory usage, so larger Qwen-Image series models can run smoothly even on cards with 24GB of VRam.
-
 ![image](./assets/architecture.PNG)
+
+FastDM uses model quantization and caching technology to achieve good inference acceleration. 
+
+The following figure shows the latency of various models on the H20 card (for detailed performance data, please refer to [perf-data](#Performance)):
+
+![alt text](./assets/perf_graph.PNG)
 
 Please refer to [introduction](./doc/introduction.md) for more details.
 
@@ -95,11 +99,11 @@ text2image：
 
 text2video：
     
-  wan-5B: **height = 704，width = 1280，num_frames = 121，num_inference_steps = 50**
+  wan-5B: **height = 768，width = 768，num_frames = 121，num_inference_steps = 50**
     
   wan-A14B：**height = 720，width = 1280，num_frames = 81，num_inference_steps = 40**
 
-Note: The following data uses [SageAttention](https://github.com/thu-ml/SageAttention) for H20 performance on qwen-image and wan2.2-A14B. Other models and card types were not used. SageAttention significantly improves performance over the torch-sdpa operator. For details, refer to the [project](https://github.com/thu-ml/SageAttention). If SageAttention is installed in your environment, it will be directly called in FastDM's CUDA-backend mode.
+Note: The following data uses [SageAttention](https://github.com/thu-ml/SageAttention) for H20 performance on qwen-image and wan2.2-A14B. SageAttention significantly improves performance over the torch-sdpa operator. For details, refer to the [project](https://github.com/thu-ml/SageAttention). If SageAttention is installed in your environment, it will be directly called in FastDM's CUDA-backend mode.
 
 The Qwen-Image perf-data of RTX8000 using the command `--data-type float16 --width 1024 --height 1024` to avoid OOM, the gpu-mem-usage is still in the process of optimization.
 
