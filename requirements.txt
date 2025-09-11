@@ -1,4 +1,5 @@
-torch == 2.7.1
+torch
+torchvision
 diffusers
 transformers
 numpy==1.26.4
@@ -10,3 +11,8 @@ ninja # for build
 ftfy # for wan mdoel
 protobuf
 sentencepiece
+gradio # for gradio webui
+imageio # for video postprocessing
+imagehash # for video postprocessing
+imageio-ffmpeg # for video postprocessing
+aiohttp # gradio server
