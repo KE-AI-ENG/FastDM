@@ -74,6 +74,16 @@ FastdDM提供起gradio服务搭建一个方便快捷的网页UI来控制图片�
 
 详情请参考[gradio服务demo](./examples/serve/readme.md)
 
+#### 视频生成
+
+FastDM支持Wan2.2模型进行视频生成。由于A14B版本推理耗时非常长，我们强烈推荐使用[Wan2.2-Lightning](https://github.com/ModelTC/Wan2.2-Lightning)的蒸馏模型。它大幅减少推理steps，大幅提升了生成速度。
+
+可以从[该地址](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers)下载我们Merge好的wan2.2-lighting，使用FastDM进行推理。
+
+`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."`
+
+以上命令生成一个5s（81/16=5）的视频，在H20上只需23s，非常迅速。
+
 #### Text2Image:
 
 不使用server模式，也可以直接运行examples/demo文件夹下的gen.py脚本进行生图：
@@ -141,3 +151,5 @@ Qwen-Image的A100与RTX-8000数据使能了`--oom-resolve`以解决OOM问题
 We learned the design and reused code from the following projects: [Diffusers](https://github.com/huggingface/diffusers), [vLLM](https://github.com/vllm-project/vllm), [Flash-attention](https://github.com/Dao-AILab/flash-attention), [SGLang](https://github.com/sgl-project/sglang), [teacache](https://github.com/ali-vilab/TeaCache)
 
 The cuda-backend kernels(high performance operator, [cutlass](https://github.com/NVIDIA/cutlass/tree/v4.1.0)-based gemm or self-attention-fp8) implementations adapted from vllm or sglang kernels and flash-attention. In order to clone the Cutlass source code from GitHub without using git submodule(the domestic network is often disconnected if you don't use VPN), we directly put the Cutlass header files in the csrc/include, this method is rather crude😂.
+
+Thanks to the distillation lora models of wan2.2 the [ModelTC community](https://github.com/ModelTC/Wan2.2-Lightning) provides. We merge the [wan2.2-lightning-model](https://github.com/ModelTC/Wan2.2-Lightning) and wan2.2 base model to an new model. It significantly increases the speed of video generation.

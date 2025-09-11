@@ -573,6 +573,7 @@ class FastDMEngine:
                 self.cache_2 = AutoCache.from_json(cache_config)
         else:
             self.cache = None
+            self.cache_2 = None
             
         # 初始化模型
         self._init_model(model_path, kernel_backend)

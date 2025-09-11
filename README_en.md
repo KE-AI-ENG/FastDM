@@ -75,6 +75,16 @@ torch 2.7 or later
 
     Please refer to [Comfyui Usage](./comfyui//README.md)
 
+#### Video Generation
+
+FastDM supports the Wan2.2 model for video generation. Because the A14B version takes a significant amount of time to infer, we strongly recommend using the distilled model from [Wan2.2-Lightning](https://github.com/ModelTC/Wan2.2-Lightning). This significantly reduces inference steps and significantly improves generation speed.
+
+You can download our merged Wan2.2-Lightning from [this address](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers) and use FastDM for inference.
+
+`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."`
+
+The above command generates a 5s (81/16=5) video, which only takes 23s on the H20, which is very fast.
+
 #### LORA
 
 Please refer to the [LORA](./examples//lora-gen/readme.md) documentation for details on how to use LORA with fastdm.
@@ -121,3 +131,5 @@ Use the `clip_score.py` and `fid.py` script in the `examples/evaluation` folder 
 We learned the design and reused code from the following projects: [Diffusers](https://github.com/huggingface/diffusers), [vLLM](https://github.com/vllm-project/vllm), [Flash-attention](https://github.com/Dao-AILab/flash-attention), [SGLang](https://github.com/sgl-project/sglang),[teacache](https://github.com/ali-vilab/TeaCache)
 
 The cuda-backend kernels(high performance operator, [cutlass](https://github.com/NVIDIA/cutlass/tree/v4.1.0)-based gemm or self-attention-fp8) implementations adapted from vllm or sglang kernels and flash-attention. In order to clone the Cutlass source code from GitHub without using git submodule(the domestic network is often disconnected if you don't use VPN), we directly put the Cutlass header files in the csrc/include, this method is rather crude😂.
+
+Thanks to the distillation lora models of wan2.2 the [ModelTC community](https://github.com/ModelTC/Wan2.2-Lightning) provides. We merge the [wan2.2-lightning-model](https://github.com/ModelTC/Wan2.2-Lightning) and wan2.2 base model to an new model. It significantly increases the speed of video generation.
