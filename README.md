@@ -80,7 +80,7 @@ FastDM支持Wan2.2模型进行视频生成。由于A14B版本推理耗时非常�
 
 可以从[该地址](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers)下载我们Merge好的wan2.2-lighting，使用FastDM进行推理。
 
-`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."`
+`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task i2v`
 
 以上命令生成一个5s（81/16=5）的视频，在H20上只需23s，非常迅速。
 

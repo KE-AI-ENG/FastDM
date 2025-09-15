@@ -25,9 +25,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
 
 ADD . /workspace
-# RUN pip install fastdm-1.1-cp310-cp310-linux_x86_64.whl
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -e .
+RUN pip install fastdm-1.1-cp310-cp310-linux_x86_64.whl
+# RUN --mount=type=cache,target=/root/.cache/pip \
+#     pip install -e .
 
 # build
 # docker build -f Dockerfile -t fastdm:latest .

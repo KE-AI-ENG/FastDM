@@ -33,3 +33,51 @@ server启动之后在浏览器中打开 http://localhost:7890 即可访问服务
 `python gradio_launch.py --model-path /path/to/FLUX.1-Kontext-dev --use-int8 --architecture flux --device 0 --cache-config ../xcaching/configs/dicache_flux.json --port 7891`
 
 ![image](../../assets/multi-image.PNG)
+
+### api server && multi model gradio
+
+api_server.py支持部署的api服务，可以通过接口调用实现图片生成/视频生成/图片编辑等能力。
+
+multi_model_gradio.py是一个webUI，在api_server服务启动后，可以通过启动该web服务在网页上实现多模型的图片生成/视频生成/图片编辑等能力。
+
+- launch api server
+
+```
+python api_server.py --model-path Qwen/Qwen-Image --architecture qwen --use-fp8 --kernel-backend cuda --served-model-name wan-i2v --task t2i --port 8080
+```
+
+request server:
+```python
+import requests
+import base64
+url = "http://0.0.0.0:8080/generate"
+
+payload = {
+    "model": "qweniamge",  # 模型名称
+    "prompt":"宇航员在火星表面骑马，写实风格，电影质感，史诗级场景",
+    "steps": 25,
+    "guidance_scale": 4.0,
+    "seed": 42,
+    "width": 1024,
+    "height": 1024
+}
+resp = requests.post(url, json=payload)
+result = resp.json()
+
+if result["type"] == "image":
+    img_data = base64.b64decode(result["image"])
+    with open("output.png", "wb") as f:
+        f.write(img_data)
+```
+
+注意：对于wan模型，如果使用的是lightning模型，architecture需要设置为`wan-i2v-lightning`或者`wan-lightning`，当使用lightning模型是，steps默认设置为4，gude_scale默认设置为1.0。
+
+- launch multi model gradio
+
+```
+python multi_model_gradio.py --port 7086 --generate-servers http://0.0.0.0:8080
+```
+
+
+
+

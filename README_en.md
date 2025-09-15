@@ -81,7 +81,7 @@ FastDM supports the Wan2.2 model for video generation. Because the A14B version 
 
 You can download our merged Wan2.2-Lightning from [this address](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers) and use FastDM for inference.
 
-`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."`
+`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task i2v`
 
 The above command generates a 5s (81/16=5) video, which only takes 23s on the H20, which is very fast.
 

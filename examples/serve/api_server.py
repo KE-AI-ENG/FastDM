@@ -59,6 +59,7 @@ class GenerateRequest(BaseModel):
     num_frames: Optional[int] = Field(default=121, description="视频帧数（wan模型）")
     fps: int = Field(default=24, description="视频帧率（wan模型）")
     max_seq_len: Optional[int] = Field(default=512, description="最大序列长度")
+    input_image: Optional[str] = Field(None, description="base64编码的源图像，仅在i2v任务中使用")
 
 class EditRequest(GenerateRequest):
     input_images: Optional[Union[str, List[str]]] = Field(None, description="base64编码的源图像")
@@ -240,15 +241,20 @@ async def get_model_info() -> ModelInfo:
 @app.post("/generate", response_model=GenerateResponse)
 async def generate(request: GenerateRequest):
     """图像/视频生成接口"""
-    logger.info(f"接收到生成请求: {json.dumps(request.dict(), indent=2)}")
     # 验证参数
     if not request.prompt.strip():
         raise HTTPException(status_code=400, detail="提示词不能为空")
     
     if request.model!=model_info.model_name:
         raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}")
+    
+    if engine.task == 'i2v' and not request.input_image:
+        raise HTTPException(status_code=400, detail="i2v任务需要提供源图像")
 
     # 准备生成参数
+    if wan_lightning:
+        request.guidance_scale = 1.0
+        request.steps = 4
     generate_params = {
         'prompt': request.prompt,
         'steps': request.steps,
@@ -262,17 +268,24 @@ async def generate(request: GenerateRequest):
         generate_params['negative_prompt'] = request.negative_prompt
 
     # 为不同架构设置特定参数
-    if args.architecture == 'wan':
+    if engine.task in ['t2v', 'i2v']:
         # 视频生成
         generate_params['num_frames'] = request.num_frames 
+    if engine.task == 'i2v':
+        # 图像到视频生成
+        try:
+            input_image = base64_to_image(request.input_image)
+            generate_params['src_image'] = input_image.convert("RGB")  # 确保是RGB格式
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"无效的源图像数据: {str(e)}")
 
-    elif args.architecture == 'qwen':
+    if args.architecture == 'qwen':
         # Qwen模型使用true_cfg_scale
         generate_params['true_cfg_scale'] = request.true_cfg_scale        
     
     try:
         # 执行生成
-        logger.info(f"engine generate params: {json.dumps(generate_params, indent=2)}")
+        # logger.info(f"engine generate params: {json.dumps(generate_params, indent=2)}")
         gen_start_time = time.time()
         
         output = engine.generate(**generate_params)
@@ -285,13 +298,12 @@ async def generate(request: GenerateRequest):
         logger.info(f"生成完成，耗时: {generation_time:.2f}秒")
         
         # 处理输出
-        if args.architecture == 'wan':
+        if "wan" in args.architecture:
             # # 视频输出：保存为临时文件
             with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
                 temp_path = tmp_file.name
             
             export_to_video(output, temp_path, fps=request.fps)
-            logger.info(f"视频已保存到临时文件: {temp_path}")
             
             # 读取视频文件并编码为base64
             with open(temp_path, 'rb') as f:
@@ -299,22 +311,6 @@ async def generate(request: GenerateRequest):
             
             # 清理临时文件
             os.unlink(temp_path)
-            # 假设 output 是 diffusers 生成的帧 (numpy 数组或 PIL.Image 列表)
-            # 如果是 PIL.Image 列表，可以先转成 numpy
-            # frames = [frame if isinstance(frame, np.ndarray) else np.array(frame) for frame in output]
-
-            # # 创建内存缓冲区
-            # video_buffer = io.BytesIO()
-
-            # # 用 imageio 写入 mp4 到内存
-            # # codec='libx264' 需要系统有 ffmpeg
-            # imageio.mimsave(video_buffer, frames, format='mp4', fps=request.fps)
-
-            # # 获取视频字节
-            # video_bytes = video_buffer.getvalue()
-
-            # # 转成 base64
-            # video_data = base64.b64encode(video_bytes).decode()
 
             return GenerateResponse(
                 success=True,
@@ -325,7 +321,6 @@ async def generate(request: GenerateRequest):
                 frames=request.num_frames,
                 generation_time=generation_time,
                 model_used=request.model,
-                parameters=generate_params
             )
             
         else:
@@ -430,6 +425,15 @@ if __name__ == '__main__':
         
     logger.info("🚀 启动 FastDM FastAPI 推理服务器...")
 
+    # wan lightning
+    wan_lightning = False
+    if args.architecture == "wan-lightning":
+        args.architecture = "wan"
+        wan_lightning = True
+    elif args.architecture == "wan-i2v-lightning":
+        args.architecture = "wan-i2v"
+        wan_lightning = True
+
     model_load_start = time.time()
     try:
         engine = FastDMEngine(
@@ -442,7 +446,8 @@ if __name__ == '__main__':
             kernel_backend=args.kernel_backend,
             cache_config=args.cache_config,
             oom_resolve=args.oom_resolve,
-            use_diffusers=args.use_diffusers
+            use_diffusers=args.use_diffusers,
+            task=args.task,
         )
         model_info = ModelInfo(
             model_name=args.served_model_name
