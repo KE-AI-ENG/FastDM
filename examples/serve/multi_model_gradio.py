@@ -694,8 +694,8 @@ def create_gradio_interface():
                                 seed = gr.Number(0, label="随机种子 (-1为随机)", precision=0)
                             
                             with gr.Row():
-                                width = gr.Slider(256, 2048, 512, step=64, label="宽度")
-                                height = gr.Slider(256, 2048, 512, step=64, label="高度")
+                                width = gr.Slider(256, 2048, 768, step=64, label="宽度")
+                                height = gr.Slider(256, 2048, 768, step=64, label="高度")
                             
                             # 视频参数 (wan模型)
                             with gr.Accordion("🎬 视频参数 (wan模型)", open=False):
