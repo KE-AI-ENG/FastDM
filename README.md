@@ -78,9 +78,16 @@ FastdDM提供起gradio服务搭建一个方便快捷的网页UI来控制图片�
 
 FastDM支持Wan2.2模型进行视频生成。由于A14B版本推理耗时非常长，我们强烈推荐使用[Wan2.2-Lightning](https://github.com/ModelTC/Wan2.2-Lightning)的蒸馏模型。它大幅减少推理steps，大幅提升了生成速度。
 
-可以从[该地址](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers)下载我们Merge好的wan2.2-lighting，使用FastDM进行推理。
+可以从[该地址](https://huggingface.co/collections/FastDM/fastdm-wan22-68c37b36ed245be3ff645650)下载我们Merge好的wan2.2-lighting，使用FastDM进行推理。
 
-`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task i2v`
+- text to video:
+
+`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task t2v`
+
+- image to video:
+
+`python gen.py --model-path FastDM/Wan2.2-I2V-A14B-Merge-Lightning-V1.0-Diffusers --architecture wan-i2v --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./output.mp4 --num-frames 81 --fps 16 --prompts "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." --task i2v --image-path https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG`
+
 
 以上命令生成一个5s（81/16=5）的视频，在H20上只需23s，非常迅速。
 

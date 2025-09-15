@@ -79,9 +79,15 @@ torch 2.7 or later
 
 FastDM supports the Wan2.2 model for video generation. Because the A14B version takes a significant amount of time to infer, we strongly recommend using the distilled model from [Wan2.2-Lightning](https://github.com/ModelTC/Wan2.2-Lightning). This significantly reduces inference steps and significantly improves generation speed.
 
-You can download our merged Wan2.2-Lightning from [this address](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers) and use FastDM for inference.
+You can download our merged Wan2.2-Lightning from [this address](https://huggingface.co/collections/FastDM/fastdm-wan22-68c37b36ed245be3ff645650) and use FastDM for inference.
 
-`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task i2v`
+- text to video:
+
+`python gen.py --model-path FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task t2v`
+
+- image to video:
+
+`python gen.py --model-path FastDM/Wan2.2-I2V-A14B-Merge-Lightning-V1.0-Diffusers --architecture wan-i2v --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./output.mp4 --num-frames 81 --fps 16 --prompts "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." --task i2v --image-path https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG`
 
 The above command generates a 5s (81/16=5) video, which only takes 23s on the H20, which is very fast.
 
