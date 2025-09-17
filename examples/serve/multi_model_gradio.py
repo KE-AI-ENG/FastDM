@@ -29,8 +29,11 @@ class ModelInfo(BaseModel):
 
 # 配置多个API服务器地址 (可通过命令行参数覆盖)
 DEFAULT_API_SERVERS = {
-    "generate": [
+    "text2image": [
         "http://0.0.0.0:8083",
+    ],
+    "text2video": [
+        "http://0.0.0.0:8085",
     ],
     "i2v": [
         "http://0.0.0.0:8084",
@@ -41,8 +44,8 @@ DEFAULT_API_SERVERS = {
 }
 
 # 全局变量
-available_models = {"generate": {}, "i2v": {}, "edit": {}}
-model_to_api = {"generate": {}, "i2v": {}, "edit": {}}
+available_models = {"text2image": {}, "text2video": {}, "i2v": {}, "edit": {}}
+model_to_api = {"text2image": {}, "text2video": {}, "i2v": {}, "edit": {}}
 api_servers = DEFAULT_API_SERVERS
 
 async def fetch_model_info_from_api(api_url: str) -> Optional[ModelInfo]:
@@ -88,8 +91,8 @@ async def fetch_all_models(model_type: str = None):
         available_models[model_type].clear()
         model_to_api[model_type].clear()
     else:
-        available_models = {"generate": {}, "i2v": {}, "edit": {}}
-        model_to_api = {"generate": {}, "i2v": {}, "edit": {}}
+        available_models = {"text2image": {}, "text2video": {}, "i2v": {}, "edit": {}}
+        model_to_api = {"text2image": {}, "text2video": {}, "i2v": {}, "edit": {}}
     
     # 处理结果
     for api_url, result in zip(server_list, results):
@@ -159,9 +162,13 @@ def refresh_models(model_type: str = "generate"):
         logger.error(f"刷新{model_type}模型列表失败: {str(e)}")
         return gr.Dropdown(choices=[("刷新失败", None)], value=None)
 
-def refresh_generate_models():
-    """刷新生成模型列表"""
-    return refresh_models("generate")
+def refresh_text2image_models():
+    """刷新文生图模型列表"""
+    return refresh_models("text2image")
+
+def refresh_text2video_models():
+    """刷新文生视频模型列表"""
+    return refresh_models("text2video")
 
 def refresh_edit_models():
     """刷新编辑模型列表"""
@@ -293,16 +300,16 @@ async def generate_content(
     # 检查模型在哪个类型中
     model_data = None
     model_type = None
-    for mtype in ["generate", "i2v", "edit"]:
+    for mtype in ["text2image", "text2video", "i2v", "edit"]:
         if model in available_models[mtype]:
             model_data = available_models[mtype][model]
             model_type = mtype
             break
 
     if not model_data:
-        # 默认使用generate类型
-        model_data = available_models["generate"].get(model, {})
-        model_type = "generate"
+        # 默认使用text2image类型
+        model_data = available_models["text2image"].get(model, {})
+        model_type = "text2image"
 
     model_info = model_data.get('model_info')
     original_model_name = model_info.model_name if model_info else model_data.get('original_name', model)
@@ -426,33 +433,61 @@ def generate_edit_sync(model, prompt, input_images, blend_mode, concat_direction
         logger.error(f"图片编辑过程出错: {str(e)}")
         return None, f"❌ 图片编辑过程出错: {str(e)}", gr.Button(interactive=True)
 
-def generate_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, input_image=None, progress=gr.Progress()):
-    """文生图/文生视频同步包装器用于Gradio"""
+def generate_text2image_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, progress=gr.Progress()):
+    """文生图同步包装器用于Gradio"""
     if not model:
         return None, "❌ 请选择一个模型", gr.Button(interactive=True)
 
     if not prompt.strip():
         return None, "❌ 请输入提示词", gr.Button(interactive=True)
 
-    if model not in model_to_api["generate"]:
-        return None, f"❌ 未找到生成模型: {model}", gr.Button(interactive=True)
+    if model not in model_to_api["text2image"]:
+        return None, f"❌ 未找到文生图模型: {model}", gr.Button(interactive=True)
 
-    api_url = model_to_api["generate"][model]
-    logger.info(f"使用模型 {model} (API: {api_url}) 生成内容")
+    api_url = model_to_api["text2image"][model]
+    logger.info(f"使用模型 {model} (API: {api_url}) 生成图片")
 
     # 显示正在处理状态
-    progress(0, desc="🎨 正在生成中...")
+    progress(0, desc="🎨 正在生成图片...")
 
     try:
         result = asyncio.run(generate_content(
             api_url, model, prompt, negative_prompt, steps,
-            guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, input_image
+            guidance_scale, true_cfg_scale, seed, width, height, 1, 24, None
         ))
-        progress(1, desc="✅ 生成完成!")
+        progress(1, desc="✅ 图片生成完成!")
         return result[0], result[1], gr.Button(interactive=True)
     except Exception as e:
-        logger.error(f"生成过程出错: {str(e)}")
-        return None, f"❌ 生成过程出错: {str(e)}", gr.Button(interactive=True)
+        logger.error(f"文生图过程出错: {str(e)}")
+        return None, f"❌ 文生图过程出错: {str(e)}", gr.Button(interactive=True)
+
+def generate_text2video_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress=gr.Progress()):
+    """文生视频同步包装器用于Gradio"""
+    if not model:
+        return None, "❌ 请选择一个模型", gr.Button(interactive=True)
+
+    if not prompt.strip():
+        return None, "❌ 请输入提示词", gr.Button(interactive=True)
+
+    if model not in model_to_api["text2video"]:
+        return None, f"❌ 未找到文生视频模型: {model}", gr.Button(interactive=True)
+
+    api_url = model_to_api["text2video"][model]
+    logger.info(f"使用模型 {model} (API: {api_url}) 生成视频")
+
+    # 显示正在处理状态
+    progress(0, desc="🎬 正在生成视频...")
+
+    try:
+        result = asyncio.run(generate_content(
+            api_url, model, prompt, negative_prompt, steps,
+            guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, None
+        ))
+        progress(1, desc="✅ 视频生成完成!")
+        return result[0], result[1], gr.Button(interactive=True)
+    except Exception as e:
+        logger.error(f"文生视频过程出错: {str(e)}")
+        return None, f"❌ 文生视频过程出错: {str(e)}", gr.Button(interactive=True)
 
 def generate_i2v_sync(model, prompt, input_image, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress=gr.Progress()):
     """图生视频专用同步包装器用于Gradio"""
@@ -656,8 +691,8 @@ def create_gradio_interface():
         """)
         
         with gr.Tabs():
-            # 文生图/文生视频标签页  
-            with gr.Tab(label="🌟 AI创作工坊 🎨 | 文生图&视频", id="text2image", elem_classes=["creative-tab"]):
+            # 文生图标签页
+            with gr.Tab(label="🎨 文生图 🖼️ | AI图片创作", id="text2image", elem_classes=["creative-tab"]):
                 with gr.Row():
                     with gr.Column(scale=1.5):
                         # 模型选择
@@ -676,7 +711,7 @@ def create_gradio_interface():
                             gr.Markdown("### ⚙️ 生成参数")
                             prompt = gr.Textbox(
                                 label="提示词",
-                                placeholder="输入你想生成的内容描述...",
+                                placeholder="输入你想生成的图片描述...",
                                 lines=2
                             )
                             negative_prompt = gr.Textbox(
@@ -696,14 +731,8 @@ def create_gradio_interface():
                             with gr.Row():
                                 width = gr.Slider(256, 2048, 768, step=64, label="宽度")
                                 height = gr.Slider(256, 2048, 768, step=64, label="高度")
-                            
-                            # 视频参数 (wan模型)
-                            with gr.Accordion("🎬 视频参数 (wan模型)", open=False):
-                                with gr.Row():
-                                    num_frames = gr.Slider(1, 300, 121, step=1, label="帧数")
-                                    fps = gr.Slider(1, 60, 24, step=1, label="帧率")
-                        
-                        generate_btn = gr.Button("🎨 开始生成", variant="primary", size="lg")
+
+                        generate_btn = gr.Button("🎨 开始生成图片", variant="primary", size="lg")
                         
                     
                     with gr.Column(scale=1):
@@ -711,11 +740,11 @@ def create_gradio_interface():
                         with gr.Group():
                             gr.Markdown("### 🖼️ 生成结果")
                             output_gallery = gr.Gallery(
-                                label="生成的内容", 
+                                label="生成的图片",
                                 show_label=False,
-                                elem_id="gallery", 
-                                columns=1, 
-                                rows=1, 
+                                elem_id="gallery",
+                                columns=1,
+                                rows=1,
                                 height=600,
                                 allow_preview=True
                             )
@@ -725,9 +754,78 @@ def create_gradio_interface():
                                 interactive=False,
                                 max_lines=2
                             )
-            
+
+            # 文生视频标签页
+            with gr.Tab(label="🎬 文生视频 🎥 | AI视频创作", id="text2video", elem_classes=["t2v-tab"]):
+                with gr.Row():
+                    with gr.Column(scale=1.5):
+                        # 模型选择
+                        with gr.Group():
+                            gr.Markdown("### 🤖 模型选择")
+                            t2v_model_dropdown = gr.Dropdown(
+                                label="选择模型",
+                                choices=[],
+                                value=None,
+                                interactive=True
+                            )
+                            t2v_refresh_btn = gr.Button("🔄 刷新模型列表", variant="secondary")
+
+                        # 生成参数
+                        with gr.Group():
+                            gr.Markdown("### ⚙️ 生成参数")
+                            t2v_prompt = gr.Textbox(
+                                label="提示词",
+                                placeholder="描述你想要的视频内容...",
+                                lines=2
+                            )
+                            t2v_negative_prompt = gr.Textbox(
+                                label="负向提示词 (可选)",
+                                placeholder="输入不希望出现的内容...",
+                                lines=1
+                            )
+
+                            with gr.Row():
+                                t2v_steps = gr.Slider(1, 100, 25, step=1, label="采样步数")
+                                t2v_guidance_scale = gr.Slider(0.0, 20.0, 4.0, step=0.1, label="引导缩放")
+
+                            with gr.Row():
+                                t2v_true_cfg_scale = gr.Slider(0.0, 20.0, 3.0, step=0.1, label="True CFG缩放")
+                                t2v_seed = gr.Number(0, label="随机种子 (-1为随机)", precision=0)
+
+                            with gr.Row():
+                                t2v_width = gr.Slider(256, 2048, 512, step=64, label="宽度")
+                                t2v_height = gr.Slider(256, 2048, 512, step=64, label="高度")
+
+                            # 视频参数
+                            with gr.Row():
+                                t2v_num_frames = gr.Slider(1, 300, 81, step=1, label="帧数")
+                                t2v_fps = gr.Slider(1, 60, 16, step=1, label="帧率")
+
+                        t2v_generate_btn = gr.Button("🎬 开始生成视频", variant="primary", size="lg")
+
+
+                    with gr.Column(scale=1):
+                        # 输出区域
+                        with gr.Group():
+                            gr.Markdown("### 🎥 生成结果")
+                            t2v_output_gallery = gr.Gallery(
+                                label="生成的视频",
+                                show_label=False,
+                                elem_id="t2v_gallery",
+                                columns=1,
+                                rows=1,
+                                height=600,
+                                allow_preview=True
+                            )
+                            t2v_status_text = gr.Textbox(
+                                label="状态",
+                                value="等待生成...",
+                                interactive=False,
+                                max_lines=2
+                            )
+
             # 图生视频标签页
-            with gr.Tab(label="🎬 图生视频 🚀 | AI视频创作", id="image2video", elem_classes=["i2v-tab"]):
+            with gr.Tab(label="🖼️ 图生视频 🚀 | 图片转视频", id="image2video", elem_classes=["i2v-tab"]):
                 with gr.Row():
                     with gr.Column(scale=1.5):
                         # 模型选择
@@ -766,21 +864,21 @@ def create_gradio_interface():
                             )
                             
                             with gr.Row():
-                                i2v_steps = gr.Slider(1, 100, 25, step=1, label="采样步数")
-                                i2v_guidance_scale = gr.Slider(0.0, 20.0, 3.5, step=0.1, label="引导缩放")
+                                i2v_steps = gr.Slider(1, 100, 4, step=1, label="采样步数")
+                                i2v_guidance_scale = gr.Slider(0.0, 20.0, 1.0, step=0.1, label="引导缩放")
                             
                             with gr.Row():
                                 i2v_true_cfg_scale = gr.Slider(0.0, 20.0, 4.0, step=0.1, label="True CFG缩放")
                                 i2v_seed = gr.Number(0, label="随机种子 (-1为随机)", precision=0)
                             
                             with gr.Row():
-                                i2v_width = gr.Slider(256, 2048, 768, step=64, label="宽度")
+                                i2v_width = gr.Slider(256, 2048, 512, step=64, label="宽度")
                                 i2v_height = gr.Slider(256, 2048, 512, step=64, label="高度")
                             
                             # 视频参数
                             with gr.Row():
-                                i2v_num_frames = gr.Slider(1, 300, 121, step=1, label="帧数")
-                                i2v_fps = gr.Slider(1, 60, 24, step=1, label="帧率")
+                                i2v_num_frames = gr.Slider(1, 300, 81, step=1, label="帧数")
+                                i2v_fps = gr.Slider(1, 60, 16, step=1, label="帧率")
                         
                         i2v_generate_btn = gr.Button("🎬 开始生成视频", variant="primary", size="lg")
                         
@@ -927,10 +1025,16 @@ def create_gradio_interface():
                 inputs=[prompt]
             )
         
-        # 事件绑定 - 文生图/文生视频
+        # 事件绑定 - 文生图
         refresh_btn.click(
-            refresh_generate_models,
+            refresh_text2image_models,
             outputs=[model_dropdown]
+        )
+
+        # 事件绑定 - 文生视频
+        t2v_refresh_btn.click(
+            refresh_text2video_models,
+            outputs=[t2v_model_dropdown]
         )
         
         # 事件绑定 - 图生视频
@@ -988,19 +1092,29 @@ def create_gradio_interface():
             outputs=[input_images]
         )
         
-        def start_generation(*_):
+        def start_text2image_generation(*_):
             # 禁用按钮并显示队列状态
-            return gr.Button(value="🕐 处理中...", interactive=False), "⏳ 请求已加入队列，正在等待处理..."
+            return gr.Button(value="🕐 生成中...", interactive=False), "⏳ 文生图请求已加入队列，正在等待处理..."
+
+        def start_text2video_generation(*_):
+            # 禁用按钮并显示队列状态
+            return gr.Button(value="🕐 生成中...", interactive=False), "⏳ 文生视频请求已加入队列，正在等待处理..."
         
         def start_edit(*_):
             # 禁用按钮并显示队列状态  
             return gr.Button(value="🕐 编辑中...", interactive=False), "⏳ 编辑请求已加入队列，正在等待处理..."
         
-        def handle_generation(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress=gr.Progress()):
-            # 调用实际生成函数
-            result = generate_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress)
+        def handle_text2image_generation(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, progress=gr.Progress()):
+            # 调用文生图函数
+            result = generate_text2image_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, progress)
             # 返回结果和重新启用的按钮
-            return result[0], result[1], gr.Button(value="🎨 开始生成", interactive=True)
+            return result[0], result[1], gr.Button(value="🎨 开始生成图片", interactive=True)
+
+        def handle_text2video_generation(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress=gr.Progress()):
+            # 调用文生视频函数
+            result = generate_text2video_sync(model, prompt, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, num_frames, fps, progress)
+            # 返回结果和重新启用的按钮
+            return result[0], result[1], gr.Button(value="🎬 开始生成视频", interactive=True)
         
         def handle_edit(model, prompt, input_images, blend_mode, concat_direction, negative_prompt, steps, guidance_scale, true_cfg_scale, seed, width, height, progress=gr.Progress()):
             # 调用实际编辑函数
@@ -1018,22 +1132,41 @@ def create_gradio_interface():
             # 禁用按钮并显示队列状态
             return gr.Button(value="🕐 生成中...", interactive=False), "⏳ 图生视频请求已加入队列，正在等待处理..."
         
-        # 文生图/文生视频 - 点击时先禁用按钮
+        # 文生图 - 点击时先禁用按钮
         generate_btn.click(
-            start_generation,
+            start_text2image_generation,
             inputs=[
                 model_dropdown, prompt, negative_prompt, steps, guidance_scale,
-                true_cfg_scale, seed, width, height, num_frames, fps
+                true_cfg_scale, seed, width, height
             ],
             outputs=[generate_btn, status_text],
             queue=False  # 立即执行按钮状态更新
         ).then(
-            handle_generation,
+            handle_text2image_generation,
             inputs=[
                 model_dropdown, prompt, negative_prompt, steps, guidance_scale,
-                true_cfg_scale, seed, width, height, num_frames, fps
+                true_cfg_scale, seed, width, height
             ],
             outputs=[output_gallery, status_text, generate_btn],
+            queue=True  # 排队处理实际生成
+        )
+
+        # 文生视频 - 点击时先禁用按钮
+        t2v_generate_btn.click(
+            start_text2video_generation,
+            inputs=[
+                t2v_model_dropdown, t2v_prompt, t2v_negative_prompt, t2v_steps, t2v_guidance_scale,
+                t2v_true_cfg_scale, t2v_seed, t2v_width, t2v_height, t2v_num_frames, t2v_fps
+            ],
+            outputs=[t2v_generate_btn, t2v_status_text],
+            queue=False  # 立即执行按钮状态更新
+        ).then(
+            handle_text2video_generation,
+            inputs=[
+                t2v_model_dropdown, t2v_prompt, t2v_negative_prompt, t2v_steps, t2v_guidance_scale,
+                t2v_true_cfg_scale, t2v_seed, t2v_width, t2v_height, t2v_num_frames, t2v_fps
+            ],
+            outputs=[t2v_output_gallery, t2v_status_text, t2v_generate_btn],
             queue=True  # 排队处理实际生成
         )
         
@@ -1083,8 +1216,12 @@ def create_gradio_interface():
 
         # 启动时刷新模型列表
         demo.load(
-            refresh_generate_models,
+            refresh_text2image_models,
             outputs=[model_dropdown]
+        )
+        demo.load(
+            refresh_text2video_models,
+            outputs=[t2v_model_dropdown]
         )
         demo.load(
             refresh_i2v_models,
@@ -1103,8 +1240,10 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="服务器地址")
     parser.add_argument("--port", type=int, default=7860, help="服务器端口")
     parser.add_argument("--share", action="store_true", help="是否创建公共链接")
-    parser.add_argument("--generate-servers", nargs="+", default=DEFAULT_API_SERVERS["generate"],
-                       help="生成模型API服务器地址列表")
+    parser.add_argument("--t2i-servers", nargs="+", default=DEFAULT_API_SERVERS["text2image"],
+                       help="文生图模型API服务器地址列表")
+    parser.add_argument("--t2v-servers", nargs="+", default=DEFAULT_API_SERVERS["text2video"],
+                       help="文生视频模型API服务器地址列表")
     parser.add_argument("--i2v-servers", nargs="+", default=DEFAULT_API_SERVERS["i2v"],
                        help="图生视频模型API服务器地址列表")
     parser.add_argument("--edit-servers", nargs="+", default=DEFAULT_API_SERVERS["edit"],
@@ -1115,7 +1254,8 @@ def main():
     # 更新全局API服务器列表
     global api_servers
     api_servers = {
-        "generate": args.generate_servers,
+        "text2image": args.t2i_servers,
+        "text2video": args.t2v_servers,
         "i2v": args.i2v_servers,
         "edit": args.edit_servers
     }
