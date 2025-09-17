@@ -1,3 +1,5 @@
+### 生图模型
+
 使用lora模型生成图片(以qwen-image写实风格lora为例)
 
 1. 下载lora模型（model-scope，qwen-kook-xieshi）：
@@ -33,3 +35,9 @@
 `python gen.py --model-path /path/to/qwen-lora-merged --architecture qwen --height 1472 --width 1104 --steps 40 --guidance-scale 4.0 --use-int8 --output-path ./qwen-merge-kook-int8-girl.png --num-warmup-runs 0 --seed 156 --prompts "小红书风格，一位亚洲女性的照片，她有着长长的黑色波浪卷发和白皙的皮肤，日落时分站在城市风景前，背后是重庆洪崖洞夜景。她涂着红色口红，身着一件露肩黑色上衣，露出锁骨和一条精致的银色项链。她表情平静且略带诱惑，头微微向右转。背景是一座城市，建筑物灯火通明，有一条河流，天际线中既有高楼大厦，也有小型建筑。天空呈现出橙色和蓝色的渐变色，表明是黄昏时分。这位女性的脸稍有模糊，给画面增添了一种柔和、梦幻的效果。她右手轻轻抚着头发，为她的姿势增添了一抹优雅。整体光线柔和，突出了她的容貌以及身后夜晚的城市风光，小红书风格"`
 
 ![image](../../assets/city-girl.PNG)
+
+### 视频模型
+
+Wan2.2-A14B推理耗时非常长，影响体验。[Wan2.2-Lightning](https://github.com/ModelTC/Wan2.2-Lightning)采用蒸馏技术大幅减少视频生成步数。
+
+FastDM采用diffusers pipeline运行wan模型，但lightning权重并不支持diffusers格式，FastDM提供merge脚本对lora权重进行合并，也可直接下载我们合并好的[权重](https://huggingface.co/FastDM/Wan2.2-T2V-A14B-Merge-Lightning-V1.0-Diffusers)。

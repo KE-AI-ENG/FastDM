@@ -48,6 +48,9 @@ if __name__ == "__main__":
             print("enable fp8 model inference!")
         elif args.use_int8:
             print("enable int8 model inference!")
+    
+    if args.image_path is not None:
+        assert args.task in ["i2i", "i2v"], "Image path is only valid for i2i or i2v tasks"
 
     model_load_start = time.time()
     engine = FastDMEngine(
@@ -60,7 +63,8 @@ if __name__ == "__main__":
         kernel_backend=args.kernel_backend,
         cache_config=args.cache_config,
         oom_resolve=args.oom_resolve,
-        use_diffusers=args.use_diffusers
+        use_diffusers=args.use_diffusers,
+        task=args.task,
     )
     model_load_time = time.time() - model_load_start
     print(f"Model loading latency: {model_load_time:.4f} seconds")
@@ -71,14 +75,15 @@ if __name__ == "__main__":
         engine.generate(
             prompt=args.prompts,
             negative_prompt=args.negative_prompts,
-            num_frames=args.num_frames if args.architecture == "wan" else None,
+            num_frames=args.num_frames if args.task == "t2v" or args.task == "i2v" else None,
             steps=args.steps,
             guidance_scale=args.guidance_scale,
             gen_seed=args.seed,
             gen_width=args.width,
             gen_height=args.height,
             max_seq_len=args.max_seq_len,
-            true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None
+            true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None,
+            src_image=args.image_path if args.task == "i2v" else None
         )
     
     # 生成
@@ -86,20 +91,21 @@ if __name__ == "__main__":
     output = engine.generate(
                 prompt=args.prompts,
                 negative_prompt=args.negative_prompts,
-                num_frames=args.num_frames if args.architecture == "wan" else None,
+                num_frames=args.num_frames if args.task == "t2v" or args.task == "i2v" else None,
                 steps=args.steps,
                 guidance_scale=args.guidance_scale,
                 gen_seed=args.seed,
                 gen_width=args.width,
                 gen_height=args.height,
                 max_seq_len=args.max_seq_len,
-                true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None)
+                true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None,
+                src_image=args.image_path if args.task == "i2v" else None)
     torch.cuda.synchronize()
     generation_time = time.time() - gen_start_time
     print(f"Generation latency: {generation_time:.4f} seconds")
 
     # 保存结果
-    if args.architecture == "wan":
+    if args.task in ["t2v", "i2v"]:
         export_to_video(output, args.output_path, fps=args.fps)
     else:
         output.save(args.output_path)

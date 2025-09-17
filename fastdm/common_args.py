@@ -26,6 +26,7 @@ def add_common_args(parser):
     parser.add_argument('--width', type=int, default=2048, help="generation width")
     parser.add_argument('--height', type=int, default=1024, help="generation height")
     parser.add_argument('--output-path', type=str, default='output.png', help="output path")
+    parser.add_argument('--task', type=str, default='t2i', choices=['t2i', 't2v', 'i2i', 'i2v'], help="task type: t2i (text-to-image), t2v (text-to-video), i2i (image-to-image), i2v (image-to-video)")
 
 def get_text_gen_parser():
     """文本生成图像的参数解析器"""
@@ -34,6 +35,7 @@ def get_text_gen_parser():
     parser.add_argument('--max-seq-len', type=int, default=512, help="max sequence length")
     parser.add_argument('--num-frames', type=int, default=121, help="number of frames for video")
     parser.add_argument('--fps', type=int, default=24, help="FPS for video output")
+    parser.add_argument('--image-path', type=str, default=None, help="input image path for img2video")
     return parser
 
 def get_image_edit_parser():
