@@ -6,7 +6,7 @@ import math
 
 INPUT_ARGS = [
     # [1, 75600, 40, 128], #wan2.2
-    # [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],    # flux_fp8   # TODO
+    [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],    # flux_fp8_bf16   # TODO
     [1, 4110, 1, 4110, 24, 24, 128, 'False', 'False'],      # qwen_fp8
     # [2, 4685, 2, 4685, 24, 24, 64, 'False', 'True'],     # sd3_fp8
     # [2, 4096, 2, 4096, 24, 24, 64, 'False', 'True'],     # sd3_fp8
@@ -80,23 +80,23 @@ def test_accuracy_sdpa(dtype = torch.bfloat16, backend="triton"):
 
     print(f"test_accuracy_sdpa in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_sdpa(dtype = torch.bfloat16, backend="triton"):
+def test_performance_sdpa(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_sdpa")
     for (B_q, S_q, B_kv, S_kv, head_num_q, head_num_kv, head_dim, is_causal, fp8_attn_) in INPUT_ARGS:
         query: torch.Tensor = torch.randn((B_q, S_q, head_num_q*head_dim), device="cuda").to(dtype)
         key: torch.Tensor = torch.randn((B_kv, S_kv, head_num_kv*head_dim), device="cuda").to(dtype)
         value: torch.Tensor = torch.randn((B_kv, S_kv, head_num_kv*head_dim), device="cuda").to(dtype)
         scale: float = 1.0 / (head_dim ** 0.5)
-        set_global_backend("torch")
-        duration_torch, _ = benchmark_kernel('sdpa', scaled_dot_product_attention, 100, query, key, value, head_num_q, head_num_kv, head_dim, False, scale, False)
-        set_global_backend(backend)
-        duration_backend, _ = benchmark_kernel('sdpa', scaled_dot_product_attention, 100, query, key, value, head_num_q, head_num_kv, head_dim, False, scale, False)
+        set_global_backend(backend1)
+        duration_backend1, _ = benchmark_kernel('sdpa', scaled_dot_product_attention, 100, query, key, value, head_num_q, head_num_kv, head_dim, False, scale, False)
+        set_global_backend(backend2)
+        duration_backend2, _ = benchmark_kernel('sdpa', scaled_dot_product_attention, 100, query, key, value, head_num_q, head_num_kv, head_dim, False, scale, False)
 
-        print(f"input_args[B={B_q},S_q={S_q},S_kv={S_kv},head_num={head_num_q},head_dim={head_dim}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[B={B_q},S_q={S_q},S_kv={S_kv},head_num={head_num_q},head_dim={head_dim}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
-    # test_accuracy_sdpa(backend="cuda")
-    test_performance_sdpa(backend="cuda")
     test_accuracy_sdpa(backend="triton")
-    test_performance_sdpa(backend="triton")
+    test_accuracy_sdpa(backend="cuda")
+    test_performance_sdpa(backend1="cuda", backend2="triton")

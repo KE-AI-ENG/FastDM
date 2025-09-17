@@ -62,7 +62,7 @@ def test_accuracy_rmsnorm(dtype = torch.bfloat16, backend="triton"):
 
     print(f"test_accuracy_rmsnorm in backend {backend}, test cases {2*len(INPUT_ARGS)-unpass}/{2*len(INPUT_ARGS)} are OK!")
 
-def test_performance_rmsnorm(dtype = torch.bfloat16, backend="triton"):
+def test_performance_rmsnorm(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_rmsnorm")
     for INPUT_ARG in INPUT_ARGS:
         if len(INPUT_ARG) == 4:
@@ -75,15 +75,15 @@ def test_performance_rmsnorm(dtype = torch.bfloat16, backend="triton"):
         scale: torch.Tensor = torch.randn((head_dim,), device="cuda").to(dtype)
         eps: float = 1e-06
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('rms_norm', rms_norm, 100, input, scale, eps)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('rms_norm', rms_norm, 100, input, scale, eps)
+        duration_backend1, result = benchmark_kernel('rms_norm', rms_norm, 100, input, scale, eps)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('rms_norm', rms_norm, 100, input, scale, eps)
 
-        print(f"input_args[B={B},S={S},head_num={head_num},head_dim={head_dim}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[B={B},S={S},head_num={head_num},head_dim={head_dim}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
     test_accuracy_rmsnorm(backend="triton")
-    test_performance_rmsnorm(backend="triton")
     test_accuracy_rmsnorm(backend="cuda")
-    test_performance_rmsnorm(backend="cuda")
+    test_performance_rmsnorm(backend1="cuda", backend2="triton")

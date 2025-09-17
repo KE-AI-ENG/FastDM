@@ -68,16 +68,17 @@ def test_accuracy_quant_per_token_int8_sym(dtype = torch.bfloat16, backend="trit
 
     print(f"test_accuracy_quant_per_token_int8_sym in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_quant_per_token_int8_sym(dtype = torch.bfloat16, backend="triton"):
+def test_performance_quant_per_token_int8_sym(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_quant_per_token_int8_sym")
     for (M, K) in INPUT_ARGS:
         input: torch.Tensor = torch.randn((M, K), device="cuda").to(dtype)
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, True)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, True)
+        duration_backend1, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, True)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, True)
 
-        print(f"input_args[M={M},K={K}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M},K={K}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 def test_accuracy_quant_per_token_int8_asym(dtype = torch.bfloat16, backend="triton"):
@@ -100,16 +101,17 @@ def test_accuracy_quant_per_token_int8_asym(dtype = torch.bfloat16, backend="tri
     
     print(f"test_accuracy_quant_per_token_int8_asym in backend {backend}, test caces {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_quant_per_token_int8_asym(dtype = torch.bfloat16, backend="triton"):
+def test_performance_quant_per_token_int8_asym(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_quant_per_token_int8_asym")
     for (M, K) in INPUT_ARGS:
         input: torch.Tensor = torch.randn((M, K), device="cuda").to(dtype)
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, False)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, False)
+        duration_backend1, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, False)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('quantize_to_int8', quantize_to_int8, 100, input, False)
 
-        print(f"input_args[M={M},K={K}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M},K={K}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 def test_accuracy_quant_per_token_fp8_sym(dtype = torch.bfloat16, backend="triton"):
@@ -131,33 +133,31 @@ def test_accuracy_quant_per_token_fp8_sym(dtype = torch.bfloat16, backend="trito
 
     print(f"test_accuracy_quant_per_token_fp8_sym in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_quant_per_token_fp8_sym(dtype = torch.bfloat16, backend="triton"):
+def test_performance_quant_per_token_fp8_sym(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_quant_per_token_fp8_sym")
     for (M, K) in INPUT_ARGS:
         input: torch.Tensor = torch.randn((M, K), device="cuda").to(dtype)
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('quantize_to_fp8', quantize_to_fp8, 100, input)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('quantize_to_fp8', quantize_to_fp8, 100, input)
+        duration_backend1, result = benchmark_kernel('quantize_to_fp8', quantize_to_fp8, 100, input)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('quantize_to_fp8', quantize_to_fp8, 100, input)
 
-        print(f"input_args[M={M},K={K}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M},K={K}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
     # int8_sym
     test_accuracy_quant_per_token_int8_sym(backend="triton")
-    test_performance_quant_per_token_int8_sym(backend="triton")
     test_accuracy_quant_per_token_int8_sym(backend="cuda")
-    test_performance_quant_per_token_int8_sym(backend="cuda")
+    test_performance_quant_per_token_int8_sym(backend1="cuda", backend2="triton")
 
     # int8_asym
     test_accuracy_quant_per_token_int8_asym(backend="triton")
-    test_performance_quant_per_token_int8_asym(backend="triton")
     # test_accuracy_quant_per_token_int8_asym(backend="cuda")
-    test_performance_quant_per_token_int8_asym(backend="cuda")
+    test_performance_quant_per_token_int8_asym(backend1="cuda", backend2="triton")
 
     # fp8_sym
     test_accuracy_quant_per_token_fp8_sym(backend="triton")
-    test_performance_quant_per_token_fp8_sym(backend="triton")
     test_accuracy_quant_per_token_fp8_sym(backend="cuda")
-    test_performance_quant_per_token_fp8_sym(backend="cuda")
+    test_performance_quant_per_token_fp8_sym(backend1="cuda", backend2="triton")

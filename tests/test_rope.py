@@ -33,7 +33,7 @@ def test_accuracy_rope(dtype = torch.bfloat16, backend="triton"):
 
     print(f"test_accuracy_rope in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_rope(dtype = torch.bfloat16, backend="triton"):
+def test_performance_rope(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_rope")
     for (B, S, hidden_dim, head_size) in INPUT_ARGS:
         max_seq_len = S
@@ -46,15 +46,15 @@ def test_performance_rope(dtype = torch.bfloat16, backend="triton"):
         key_triton = torch.empty_like(key_torch).copy_(key_torch)
 
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('rotary_pos_embedding', rotary_pos_embedding, 100, query_torch, key_torch, head_size, cos_sin_cache, is_neox)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('rotary_pos_embedding', rotary_pos_embedding, 100, query_triton, key_triton, head_size, cos_sin_cache, is_neox)
+        duration_backend1, result = benchmark_kernel('rotary_pos_embedding', rotary_pos_embedding, 100, query_torch, key_torch, head_size, cos_sin_cache, is_neox)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('rotary_pos_embedding', rotary_pos_embedding, 100, query_triton, key_triton, head_size, cos_sin_cache, is_neox)
 
-        print(f"input_args[B={B}, S={S}, hidden_dim={hidden_dim}, head_size={head_size}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[B={B}, S={S}, hidden_dim={hidden_dim}, head_size={head_size}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
     test_accuracy_rope(backend="triton")
-    test_performance_rope(backend="triton")
     test_accuracy_rope(backend="cuda")
-    test_performance_rope(backend="cuda")
+    test_performance_rope(backend1="cuda", backend2="triton")

@@ -70,7 +70,7 @@ def test_accuracy_matmul_int8(dtype = torch.bfloat16, backend="triton"):
     
     print(f"test_accuracy_matmul_int8 in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_matmul_int8(dtype = torch.bfloat16, backend="triton"):
+def test_performance_matmul_int8(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_matmul_int8")
     for (M, K, N) in INPUT_ARGS:
         a: torch.Tensor = torch.randint(-128, 128, (M, K), device="cuda").to(torch.int8)
@@ -84,11 +84,12 @@ def test_performance_matmul_int8(dtype = torch.bfloat16, backend="triton"):
         bias = torch.randn(N, device="cuda").to(torch.bfloat16)
 
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('int8_matmul', int8_matmul, 100, a, b, scale_a, scale_b, out_dtype, azp_adj, azp, bias)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('int8_matmul', int8_matmul, 100, a, b, scale_a, scale_b, out_dtype, azp_adj, azp, bias)
+        duration_backend1, result = benchmark_kernel('int8_matmul', int8_matmul, 100, a, b, scale_a, scale_b, out_dtype, azp_adj, azp, bias)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('int8_matmul', int8_matmul, 100, a, b, scale_a, scale_b, out_dtype, azp_adj, azp, bias)
 
-        print(f"input_args[M={M},K={K},N={N}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M},K={K},N={N}], duration[torch]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 def test_accuracy_matmul_fp8(dtype = torch.bfloat16, backend="triton"):
@@ -114,9 +115,9 @@ def test_accuracy_matmul_fp8(dtype = torch.bfloat16, backend="triton"):
             print(f"ERROR: M={M}, K={K}, N={N}")
             print(f"{e}\n")
 
-    print(f"test_accuracy_quant_per_token_fp8_sym in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
+    print(f"test_accuracy_matmul_fp8 in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_matmul_fp8(dtype = torch.bfloat16, backend="triton"):
+def test_performance_matmul_fp8(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_matmul_fp8")
     for (M, K, N) in INPUT_ARGS:
         a: torch.Tensor = torch.randn((M, K), device="cuda").to(torch.float8_e4m3fn)
@@ -128,22 +129,21 @@ def test_performance_matmul_fp8(dtype = torch.bfloat16, backend="triton"):
         bias = torch.randn(N, device="cuda").to(torch.bfloat16)
 
         set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('fp8_matmul', fp8_matmul, 100, a, b, scale_a, scale_b, out_dtype, bias)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('fp8_matmul', fp8_matmul, 100, a, b, scale_a, scale_b, out_dtype, bias)
+        duration_backend1, result = benchmark_kernel('fp8_matmul', fp8_matmul, 100, a, b, scale_a, scale_b, out_dtype, bias)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('fp8_matmul', fp8_matmul, 100, a, b, scale_a, scale_b, out_dtype, bias)
 
-        print(f"input_args[M={M},K={K},N={N}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M},K={K},N={N}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
     # int8_asym
     test_accuracy_matmul_int8(backend="triton")
-    test_performance_matmul_int8(backend="triton")
     # test_accuracy_matmul_int8(backend="cuda")
-    test_performance_matmul_int8(backend="cuda")
+    test_performance_matmul_int8(backend1="cuda", backend2="triton")
 
     # fp8_mm
     test_accuracy_matmul_fp8(backend="triton")
-    test_performance_matmul_fp8(backend="triton")
     # test_accuracy_matmul_fp8(backend="cuda")
-    test_performance_matmul_fp8(backend="cuda")
+    test_performance_matmul_fp8(backend1="cuda", backend2="triton")
