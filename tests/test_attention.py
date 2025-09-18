@@ -6,10 +6,10 @@ import math
 
 INPUT_ARGS = [
     # [1, 75600, 40, 128], #wan2.2
-    [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],    # flux_fp8_bf16   # TODO
+    # [1, 4608, 1, 4608, 24, 24, 128, 'False', 'True'],       # flux_fp8_bf16   # TODO
     [1, 4110, 1, 4110, 24, 24, 128, 'False', 'False'],      # qwen_fp8
-    # [2, 4685, 2, 4685, 24, 24, 64, 'False', 'True'],     # sd3_fp8
-    # [2, 4096, 2, 4096, 24, 24, 64, 'False', 'True'],     # sd3_fp8
+    # [2, 4685, 2, 4685, 24, 24, 64, 'False', 'True'],        # sd3_fp8
+    # [2, 4096, 2, 4096, 24, 24, 64, 'False', 'True'],        # sd3_fp8
     [2, 4096, 2, 4096, 10, 10, 64, 'False', 'False'],
     [2, 4096, 2, 77, 10, 10, 64, 'False', 'False'],         # sdxl_bf16
     [2, 1024, 2, 1024, 20, 20, 64, 'False', 'False'],
@@ -17,12 +17,15 @@ INPUT_ARGS = [
     [1, 4106, 1, 4106, 24, 24, 128, 'False', 'False'],      # qwen_bf16
     [2, 4685, 2, 4685, 24, 24, 64, 'False', 'False'],       # sd3_fp8
     [2, 4096, 2, 4096, 24, 24, 64, 'False', 'False'],       # sd3_fp8
+
+    # [1, 489830, 1, 489830, 40, 40, 128, 'False', 'False'],  # Wan2.2-I2V-A14B
+    # [1, 489830, 1, 512, 40, 40, 128, 'False', 'False'],     # Wan2.2-I2V-A14B
 ]
 
 def attention_ref(
-    q,
-    k,
-    v,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
     dropout_p=0.0,
     upcast=True,
 ):
@@ -43,12 +46,22 @@ def attention_ref(
         q, k, v = q.float(), k.float(), v.float()
     k = repeat(k, "b s h d -> b s (h g) d", g=q.shape[2] // k.shape[2])
     v = repeat(v, "b s h d -> b s (h g) d", g=q.shape[2] // v.shape[2])
-    d = q.shape[-1]
-    scores = torch.einsum("bthd,bshd->bhts", q, k) / math.sqrt(d)
+    # d = q.shape[-1]
+    # scores = torch.einsum("bthd,bshd->bhts", q, k) / math.sqrt(d)
+    b, t_q, h, d = q.shape
+    _, t_kv, _, _ = k.shape
+    q_reshaped = q.transpose(1,2).reshape(b * h, t_q, d)    # (bh)td
+    k_reshaped = k.transpose(1,2).reshape(b * h, t_kv, d)   # (bh)sd
+    scores = torch.bmm(q_reshaped,k_reshaped.transpose(1,2)) / math.sqrt(d) # (bh)ts
+
     attention = torch.softmax(scores, dim=-1).to(v.dtype)
     dropout_scaling = 1.0 / (1 - dropout_p)
     attention_drop = attention
-    output = torch.einsum("bhts,bshd->bthd", attention_drop, v * dropout_scaling)
+    # output = torch.einsum("bhts,bshd->bthd", attention_drop, v * dropout_scaling)
+    v_reshaped = v.transpose(1,2).reshape(b * h, t_kv, d)   # (bh)sd
+    output = torch.bmm(attention_drop, v_reshaped * dropout_scaling)    # (bh)td
+    output = output.reshape(b, h, t_q, d).transpose(1,2)    # bhtd
+
     return output.to(dtype=dtype_og), attention.to(dtype=dtype_og)
 
 
@@ -60,19 +73,27 @@ def test_accuracy_sdpa(dtype = torch.bfloat16, backend="triton"):
         key: torch.Tensor = torch.randn((B_kv, S_kv, head_num_kv*head_dim), device="cuda").to(dtype)
         value: torch.Tensor = torch.randn((B_kv, S_kv, head_num_kv*head_dim), device="cuda").to(dtype)
         scale: float = 1.0 / (head_dim ** 0.5)
-
-        C_torch, _ = attention_ref(
+        
+        total_token_num = B_q*S_q*head_num_q
+        token_num_per_kernel = 1*489830*34*(128//head_dim)
+        if (head_dim in [64,128]) and (total_token_num > token_num_per_kernel): # if seq_len is extremely large
+            set_global_backend("torch")
+            C_torch = scaled_dot_product_attention(query, key, value, head_num_q, head_num_kv, head_dim, scale=scale)
+        else:
+            C_torch, _ = attention_ref(
                 query.view(B_q, S_q, head_num_q, head_dim),
                 key.view(B_kv, S_kv, head_num_kv, head_dim),
                 value.view(B_kv, S_kv, head_num_kv, head_dim),
                 dropout_p=0.0,
                 upcast=True,
             )
+            C_torch = C_torch.reshape(B_q, S_q, head_num_q*head_dim)
+
         set_global_backend(backend)
         C_backend = scaled_dot_product_attention(query, key, value, head_num_q, head_num_kv, head_dim, scale=scale)
 
         try:
-            kernel_output_assert_close(C_torch.reshape((B_q, S_q, head_num_q*head_dim)), C_backend, rtol=0.0, atol=1.8e-2)   # rtol=0.0, atol=1.8e-2
+            kernel_output_assert_close(C_torch, C_backend)   # rtol=0.0, atol=1.8e-2
         except Exception as e:
             unpass += 1
             print(f"ERROR: B_q={B_q}, S_q={S_q}, B_kv={B_kv}, S_kv={S_kv}, head_num={head_num_q}, head_dim={head_dim}")

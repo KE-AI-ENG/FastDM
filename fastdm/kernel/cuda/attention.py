@@ -25,6 +25,47 @@ from fastdm.kernel.registry import kernel_registry
 
 import fastdm.cuda_ops as cuda_ops
 
+def sageattn_wrapper(
+        q: torch.Tensor, 
+        k: torch.Tensor, 
+        v: torch.Tensor, 
+        scale: float
+    ) -> torch.Tensor:
+    b, t, num_q_heads, head_dim = q.shape
+
+    total_token_num = b*t*num_q_heads
+    token_num_per_kernel = 1*489830*34*(128//head_dim)
+    if (head_dim in [64,128]) and (total_token_num > token_num_per_kernel): # if seq_len is extremely large
+        assert num_q_heads == k.shape[2]
+        assert num_q_heads == v.shape[2]
+
+        head_num_per_kernel = token_num_per_kernel//b//t
+        assert head_num_per_kernel > 0
+        # split head_num
+        split_section = []
+        tmp = num_q_heads
+        while(tmp > 0):
+            split_section.append(head_num_per_kernel if tmp-head_num_per_kernel>=0 else tmp)
+            tmp -= head_num_per_kernel
+        q_set = torch.split(q, split_section, dim=2)
+        k_set = torch.split(k, split_section, dim=2)
+        v_set = torch.split(v, split_section, dim=2)
+
+        o_set = []
+        for i in range(len(q_set)):
+            q_part = q_set[i].contiguous()
+            k_part = k_set[i].contiguous()
+            v_part = v_set[i].contiguous()
+            o_part = sageattn(q_part, k_part, v_part, tensor_layout="NHD", is_causal=False, sm_scale=scale)
+            o_set.append(o_part)
+
+        attn_output = torch.cat(o_set, dim=2)
+
+    else: 
+        attn_output = sageattn(q, k, v, tensor_layout="NHD", is_causal=False, sm_scale=scale)
+
+    return attn_output
+
 @kernel_registry.register('sdpa', 'cuda')
 def sdpa_cuda(
     query: torch.Tensor,
@@ -82,7 +123,7 @@ def sdpa_cuda(
                 q = query.view(b, t, num_q_heads, head_dim)
                 k = key.view(b, key.size(1), num_kv_heads, head_dim)
                 v = value.view(b, value.size(1), num_kv_heads, head_dim)
-                attn_output = sageattn(q, k, v, tensor_layout="NHD", is_causal=False, sm_scale=scale)
+                attn_output = sageattn_wrapper(q, k, v, scale)
                 attn_output = attn_output.view(b, t, c)
             else:
                 q = query.view(query.size(0), query.size(1), num_q_heads, head_dim).transpose(1, 2)
