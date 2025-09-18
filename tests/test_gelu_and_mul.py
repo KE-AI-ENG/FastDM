@@ -25,18 +25,19 @@ def test_accuracy_gelu_and_mul(dtype = torch.bfloat16, backend="triton"):
 
     print(f"test_accuracy_gelu_and_mul in backend {backend}, test cases {len(INPUT_ARGS)-unpass}/{len(INPUT_ARGS)} are OK!")
 
-def test_performance_gelu_and_mul(dtype = torch.bfloat16, backend="triton"):
+def test_performance_gelu_and_mul(dtype = torch.bfloat16, backend1="cuda", backend2="triton"):
     print(f"test_performance_gelu_and_mul")
     for (M, K) in INPUT_ARGS:
         input: torch.Tensor = torch.randn((M, K), device="cuda").to(dtype)
-        set_global_backend("torch")
-        duration_torch, result = benchmark_kernel('gelu_and_mul', gelu_and_mul, 100, input)
-        set_global_backend(backend)
-        duration_backend, result = benchmark_kernel('gelu_and_mul', gelu_and_mul, 100, input)
+        set_global_backend(backend1)
+        duration_backend1, result = benchmark_kernel('gelu_and_mul', gelu_and_mul, 100, input)
+        set_global_backend(backend2)
+        duration_backend2, result = benchmark_kernel('gelu_and_mul', gelu_and_mul, 100, input)
 
-        print(f"input_args[M={M}, K={K}], duration[torch]: {duration_torch * 1000} ms, duration[{backend}]: {duration_backend * 1000} ms")
+        performance = (duration_backend1 - duration_backend2) / duration_backend1 * 100
+        print(f"input_args[M={M}, K={K}], duration[{backend1}]: {duration_backend1 * 1000} ms, duration[{backend2}]: {duration_backend2 * 1000} ms, ({backend1}-{backend2})/{backend1}={performance}%")
 
 
 if __name__ == "__main__":
     test_accuracy_gelu_and_mul(backend="triton")
-    test_performance_gelu_and_mul(backend="triton")
+    test_performance_gelu_and_mul(backend1="torch", backend2="triton")
