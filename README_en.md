@@ -21,7 +21,7 @@ There are two architectures for the diffusion model: unet and DiT, the fastdm su
 #### DiT-architecthre
 [FLUX](https://huggingface.co/black-forest-labs/FLUX.1-dev)/[FLUX-Krea](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev)/[FLUX-Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev)
 
-[QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)
+[QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)/[Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509)
 
 [StableDiffusion-3.5](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)
 
@@ -99,7 +99,7 @@ Please refer to the [LORA](./examples//lora-gen/readme.md) documentation for det
 
 use the `image_edit.py` script in the `examples/demo` folder to edit an image:
 
-`python image_edit.py --model-path /path/to/Qwen-Image-Edit --use-int8 --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background."`
+`python image_edit.py --model-path /path/to/Qwen-Image-Edit --architecture qwen --use-int8 --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background." --task i2i`
 
 Similar to Text2Image, you can also use the gradio_launch.py ​​script to build a web service for image editing, allowing you to enjoy multi-image editing similar to **nano-banana**. For more details, please refer to [gradio service demo](./examples/serve/readme.md) 
 

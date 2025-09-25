@@ -38,6 +38,10 @@ def process_multiple_images(images, blend_mode="concatenate", concat_direction="
     if blend_mode == "first":
         return pil_images[0]
     
+    elif blend_mode == "list":
+        # 返回一个包含所有图片的列表
+        return pil_images
+
     elif blend_mode == "average":
         # 统一所有图片尺寸到第一张图片的大小
         base_size = pil_images[0].size
@@ -133,7 +137,8 @@ engine_ = FastDMEngine(
             kernel_backend=args.kernel_backend,
             cache_config=args.cache_config,
             oom_resolve=args.oom_resolve,
-            use_diffusers=args.use_diffusers)
+            use_diffusers=args.use_diffusers,
+            task=args.task)
 
 # 图片生成函数
 def generate_image_from_prompt(prompt,
@@ -162,7 +167,7 @@ def generate_image_from_prompt(prompt,
         images = [img[0] for img in init_images]
 
         input_image = process_multiple_images(images, blend_mode, concat_direction)
-        if input_image:
+        if input_image and blend_mode!="list":
             input_image = input_image.convert("RGB")  # 确保RGB格式
 
     try:
@@ -221,10 +226,10 @@ with gr.Blocks(title="FastDM生图服务", css=".gradio-container {max-width: 12
                 with gr.Row():
                     # 多图混合模式选择（去掉overlay，新增concatenate）
                     blend_mode = gr.Dropdown(
-                        choices=["concatenate", "average", "first"],
-                        value="concatenate",
+                        choices=["concatenate", "average", "first", "list"],
+                        value="list",
                         label="输入图片融合模式",
-                        info="concatenate: 拼接 | average: 平均混合 | first: 仅使用第一张"
+                        info="list: 多图组成list | concatenate: 拼接 | average: 平均混合 | first: 仅使用第一张"
                     )
                     
                     # 拼接方向选择（仅在concatenate模式下显示）
@@ -246,7 +251,7 @@ with gr.Blocks(title="FastDM生图服务", css=".gradio-container {max-width: 12
             # 参数控制区域
             with gr.Accordion("高级参数", open=False):
                 with gr.Row():
-                    steps = gr.Slider(1, 100, value=50, step=1, label="迭代步数")
+                    steps = gr.Slider(1, 100, value=40, step=1, label="迭代步数")
                     cfg_scale = gr.Slider(1.0, 20.0, value=4.0, step=0.5, label="提示权重")
                     seed = gr.Number(label="随机种子", value=-1)
                 
@@ -332,7 +337,7 @@ with gr.Blocks(title="FastDM生图服务", css=".gradio-container {max-width: 12
         images = [img[0] for img in images]
 
         processed = process_multiple_images(images, blend_mode, concat_direction)
-        if processed and (len(images) > 1 or blend_mode != "first"):
+        if processed and (len(images) > 1 or blend_mode != "first") and blend_mode != "list":
             return processed, gr.update(visible=True)
         else:
             return None, gr.update(visible=False)

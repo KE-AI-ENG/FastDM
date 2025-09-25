@@ -64,7 +64,7 @@ class GenerateRequest(BaseModel):
 class EditRequest(GenerateRequest):
     input_images: Optional[Union[str, List[str]]] = Field(None, description="base64编码的源图像")
     blend_mode: Optional[str] = Field(
-        default="concatenate",
+        default="list",
         description="多图处理模式: 'average' - 平均混合, 'concatenate' - 拼接, 'first' - 使用第一张, 'list' - 直接传递图片列表"
     )
     concat_direction: Optional[str] = Field(
@@ -114,7 +114,7 @@ def batch_base64_to_images(base64_list: List[str]) -> List[Image.Image]:
     return images
 
 #多图片处理函数
-def process_multiple_images(images, blend_mode="concatenate", concat_direction="horizontal"):
+def process_multiple_images(images, blend_mode="list", concat_direction="horizontal"):
     """
     处理多张输入图片
     blend_mode: "average" - 平均混合, "concatenate" - 拼接, "first" - 使用第一张, "list" - 直接返回图片列表
@@ -391,7 +391,7 @@ async def edit_image(request: EditRequest):
     # 根据blend_mode处理图片参数
     if request.blend_mode == "list" and isinstance(processed_images, list):
         # list模式：传递图片列表
-        generate_params['src_images'] = [img.convert("RGB") for img in processed_images]
+        generate_params['src_image'] = [img.convert("RGB") for img in processed_images]
     else:
         # 其他模式：传递单张图片
         if processed_images:

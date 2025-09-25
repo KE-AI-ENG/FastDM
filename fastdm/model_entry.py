@@ -759,6 +759,9 @@ class FastDMEngine:
         if src_image is not None and self.task == "i2v":
             processed_image, new_gen_height, new_gen_width = self.image_processor(src_image, width=gen_width, height=gen_height)
             kwargs["image"] = processed_image
+        elif src_image is not None and self.task == "i2i":
+            new_gen_height, new_gen_width = gen_height, gen_width
+            kwargs["image"] = src_image
         else:
             new_gen_height, new_gen_width = gen_height, gen_width
 
