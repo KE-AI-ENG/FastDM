@@ -945,12 +945,13 @@ def create_gradio_interface():
                                 blend_mode = gr.Dropdown(
                                     choices=[
                                         ("使用第一张", "first"),
-                                        ("平均混合", "average"), 
-                                        ("拼接", "concatenate")
+                                        ("平均混合", "average"),
+                                        ("拼接", "concatenate"),
+                                        ("图片列表", "list")
                                     ],
-                                    value="concatenate",
+                                    value="list",
                                     label="混合模式",
-                                    info="多张图片时的处理方式"
+                                    info="多张图片时的处理方式：list模式直接传递图片列表给模型"
                                 )
                                 concat_direction = gr.Dropdown(
                                     choices=[
@@ -986,8 +987,8 @@ def create_gradio_interface():
                                 edit_seed = gr.Number(0, label="随机种子 (-1为随机)", precision=0)
                             
                             with gr.Row():
-                                edit_width = gr.Slider(256, 2048, 512, step=64, label="宽度")
-                                edit_height = gr.Slider(256, 2048, 512, step=64, label="高度")
+                                edit_width = gr.Slider(256, 2048, 1024, step=64, label="宽度")
+                                edit_height = gr.Slider(256, 2048, 1024, step=64, label="高度")
                         
                         edit_generate_btn = gr.Button("✏️ 开始编辑", variant="primary", size="lg")
                         

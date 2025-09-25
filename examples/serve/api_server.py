@@ -64,8 +64,8 @@ class GenerateRequest(BaseModel):
 class EditRequest(GenerateRequest):
     input_images: Optional[Union[str, List[str]]] = Field(None, description="base64编码的源图像")
     blend_mode: Optional[str] = Field(
-        default="concatenate",
-        description="多图处理模式: 'average' - 平均混合, 'concatenate' - 拼接, 'first' - 使用第一张"
+        default="list",
+        description="多图处理模式: 'average' - 平均混合, 'concatenate' - 拼接, 'first' - 使用第一张, 'list' - 直接传递图片列表"
     )
     concat_direction: Optional[str] = Field(
         default="horizontal",
@@ -114,19 +114,19 @@ def batch_base64_to_images(base64_list: List[str]) -> List[Image.Image]:
     return images
 
 #多图片处理函数
-def process_multiple_images(images, blend_mode="concatenate", concat_direction="horizontal"):
+def process_multiple_images(images, blend_mode="list", concat_direction="horizontal"):
     """
     处理多张输入图片
-    blend_mode: "average" - 平均混合, "concatenate" - 拼接, "first" - 使用第一张
+    blend_mode: "average" - 平均混合, "concatenate" - 拼接, "first" - 使用第一张, "list" - 直接返回图片列表
     concat_direction: "horizontal" - 水平拼接, "vertical" - 垂直拼接
     """
     if not images or len(images) == 0:
         return None
-    
+
     # 如果只有一张图片，直接返回
     if len(images) == 1:
         return images[0]
-    
+
     # 转换所有图片为PIL Image格式
     pil_images = []
     for img in images:
@@ -137,26 +137,30 @@ def process_multiple_images(images, blend_mode="concatenate", concat_direction="
         else:
             continue
         pil_images.append(pil_img.convert("RGB"))
-    
+
     if not pil_images:
         return None
-    
+
     if blend_mode == "first":
         return pil_images[0]
-    
+
+    elif blend_mode == "list":
+        # 直接返回图片列表，不进行任何合并处理
+        return pil_images
+
     elif blend_mode == "average":
         # 统一所有图片尺寸到第一张图片的大小
         base_size = pil_images[0].size
         resized_images = [img.resize(base_size, Image.Resampling.LANCZOS) for img in pil_images]
-        
+
         # 平均混合
         arrays = [np.array(img, dtype=np.float32) for img in resized_images]
         blended_array = np.mean(arrays, axis=0).astype(np.uint8)
         return Image.fromarray(blended_array)
-    
+
     elif blend_mode == "concatenate":
         return concatenate_images(pil_images, concat_direction)
-    
+
     return pil_images[0]
 
 def concatenate_images(images, direction="horizontal"):
@@ -241,6 +245,9 @@ async def get_model_info() -> ModelInfo:
 @app.post("/generate", response_model=GenerateResponse)
 async def generate(request: GenerateRequest):
     """图像/视频生成接口"""
+    log_data = request.dict()
+    log_data.pop('input_images', None)  # 不记录input_images的base64数据
+    logger.info(f"接收到编辑请求: {json.dumps(log_data, indent=2)}")
     # 验证参数
     if not request.prompt.strip():
         raise HTTPException(status_code=400, detail="提示词不能为空")
@@ -344,7 +351,9 @@ async def generate(request: GenerateRequest):
 @app.post("/edit", response_model=GenerateResponse)
 async def edit_image(request: EditRequest):
     """图像编辑接口"""
-    # logger.info(f"接收到编辑请求: {json.dumps(request.dict(), indent=2)}")
+    log_data = request.dict()
+    log_data.pop('input_images', None)  # 不记录input_images的base64数据
+    logger.info(f"接收到编辑请求: {json.dumps(log_data, indent=2)}")
     # 验证参数
     if not request.prompt.strip():
         raise HTTPException(status_code=400, detail="提示词不能为空")
@@ -365,14 +374,11 @@ async def edit_image(request: EditRequest):
         input_images = batch_base64_to_images(input_images)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"无效的图像数据: {str(e)}")
-    input_image = process_multiple_images(input_images, request.blend_mode, request.concat_direction)
-    if input_image:
-        input_image = input_image.convert("RGB")  # 确保RGB格式
+    processed_images = process_multiple_images(input_images, request.blend_mode, request.concat_direction)
 
     # 准备生成参数
     generate_params = {
         'prompt': request.prompt,
-        'src_image': input_image,
         'steps': request.steps,
         'guidance_scale': request.guidance_scale,
         'gen_seed': request.seed,
@@ -380,6 +386,15 @@ async def edit_image(request: EditRequest):
         'gen_height': request.height,
         'max_seq_len': request.max_seq_len
     }
+
+    # 根据blend_mode处理图片参数
+    if request.blend_mode == "list" and isinstance(processed_images, list):
+        # list模式：传递图片列表
+        generate_params['src_image'] = [img.convert("RGB") for img in processed_images]
+    else:
+        # 其他模式：传递单张图片
+        if processed_images:
+            generate_params['src_image'] = processed_images.convert("RGB")
     
     if request.negative_prompt:
         generate_params['negative_prompt'] = request.negative_prompt
