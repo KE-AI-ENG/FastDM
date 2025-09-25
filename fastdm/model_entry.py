@@ -25,6 +25,7 @@ from fastdm.model.wan import WanTransformer3DModelCore
 from fastdm.model.controlnets import SdxlControlNetModelCore, FluxControlNetModelCore
 from fastdm.kernel.utils import set_global_backend
 from fastdm.caching.xcaching import AutoCache
+from fastdm.sparse.xsparse import RadialAttn
 
 class ConfigMixin:
     """Configuration-related mixin class"""
@@ -451,7 +452,8 @@ class WanTransformer3DWrapper(BaseModelWrapper):
                 rope_max_seq_len = self.model_config_dict['rope_max_seq_len'],
                 data_type=self.config.dtype, 
                 quant_dtype=quant_type,
-                cache=cache
+                cache=cache,
+                sparse_attn=kwargs.get('sparse_attn', None),
         )
         
         if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):
@@ -538,7 +540,8 @@ class FastDMEngine:
                  cache_config=None,
                  oom_resolve=False,
                  use_diffusers = True,
-                 task="t2i"):
+                 task="t2i",
+                 enable_sparse_attn=False):
         """
         初始化 FastDM 引擎
         
@@ -554,12 +557,14 @@ class FastDMEngine:
             oom_resolve: 是否启用 OOM 解决方案
             use_diffusers: 是否使用 diffusers 库
             task: 任务类型 (t2i/t2v/i2i/i2v)
+            enable_sparse_attn: 是否启用稀疏注意力机制
         """
         self.architecture = architecture
         self.device = device
         self.oom_resolve = oom_resolve
         self.use_diffusers = use_diffusers
         self.task = task
+        self.enable_sparse_attn = enable_sparse_attn
         
         # 设置设备
         torch.cuda.set_device(device)
@@ -583,6 +588,12 @@ class FastDMEngine:
         else:
             self.cache = None
             self.cache_2 = None
+
+        # 初始化sparse attention
+        if self.enable_sparse_attn:
+            if architecture not in ["wan", "wan-i2v"]:
+                raise ValueError("Sparse attention is only supported for Wan models")
+            self.sparse_attn = RadialAttn(block_size=64,model_type="wan")
             
         # 初始化模型
         self._init_model(model_path, kernel_backend)
@@ -625,6 +636,10 @@ class FastDMEngine:
                 if self.architecture == "wan" or self.architecture == "wan-i2v": # wan model use diff cache for low noise and high noise
                     self.cache_2.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
                     self.cache_2.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0]
+            
+            # 设置radial attn current step回调
+            if self.sparse_attn:     
+                self.sparse_attn.current_steps_callback = lambda: self.pipe.scheduler.step_index
                 
             # 替换模型实现
             if self.architecture == "sdxl":
@@ -660,7 +675,8 @@ class FastDMEngine:
                                 quant_type=self.quant_type, 
                                 kernel_backend=kernel_backend, 
                                 config_json=f"{self.model_path}/transformer/config.json",
-                                cache=self.cache).eval()
+                                cache=self.cache,
+                                sparse_attn=self.sparse_attn).eval()
                 if hasattr(self.pipe, 'transformer_2') and self.pipe.transformer_2 is not None:
                     self.pipe.transformer_2 = create_model("wan", 
                                     ckpt_path=self.pipe.transformer_2.state_dict(), 
@@ -668,7 +684,8 @@ class FastDMEngine:
                                     quant_type=self.quant_type, 
                                     kernel_backend=kernel_backend, 
                                     config_json=f"{self.model_path}/transformer_2/config.json",
-                                    cache=self.cache_2).eval()
+                                    cache=self.cache_2,
+                                    sparse_attn=self.sparse_attn).eval()
             else:
                 raise ValueError(
                     f"The {self.architecture} model is not supported!!!"

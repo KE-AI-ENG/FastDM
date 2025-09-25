@@ -36,6 +36,7 @@ def get_text_gen_parser():
     parser.add_argument('--num-frames', type=int, default=121, help="number of frames for video")
     parser.add_argument('--fps', type=int, default=24, help="FPS for video output")
     parser.add_argument('--image-path', type=str, default=None, help="input image path for img2video")
+    parser.add_argument('--enable-sparse-attn', action='store_true', help="Enable sparse attention for video model")
     return parser
 
 def get_image_edit_parser():

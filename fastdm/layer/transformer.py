@@ -4,10 +4,12 @@
 from typing import Optional, Tuple
 
 import torch
+from einops import rearrange
 
 from fastdm.layer.qlinear import QLinear
 from fastdm.layer.activations import *
 from fastdm.kernel.operators_set import rms_norm, rotary_pos_embedding, scaled_dot_product_attention
+from fastdm.sparse.xsparse import RadialAttn
 
 class FeedForward:
     r"""
@@ -448,6 +450,7 @@ class WanAttention:
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        sparse_attn: Optional[RadialAttn] = None,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -504,8 +507,26 @@ class WanAttention:
             value_img = self.add_v_proj.forward(encoder_hidden_states_img)
             key_img = rms_norm(key_img, self.norm_added_k_weight, self.eps)
             hidden_states_img = scaled_dot_product_attention(query, key_img, value_img, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+        
+        if sparse_attn is not None and self.cross_attention_dim_head is None:  # case for sparse attention
+            current_step = sparse_attn.current_steps_callback() if sparse_attn.current_steps_callback() is not None else 0
+            if current_step < sparse_attn.dense_steps:
+                # use dense attention
+                hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+            else:
+                query = query.unflatten(2, (self.heads, -1))
+                key = key.unflatten(2, (self.heads, -1))
+                value = value.unflatten(2, (self.heads, -1))
 
-        hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+                batch_size = query.shape[0]
+                query = rearrange(query, "b s h d -> (b s) h d")
+                key = rearrange(key, "b s h d -> (b s) h d")
+                value = rearrange(value, "b s h d -> (b s) h d")
+                # apply radial attention
+                hidden_states = sparse_attn.apply(query=query, key=key, value=value)
+                hidden_states = rearrange(hidden_states, "(b s) h d -> b s h d", b=batch_size)
+        else:
+            hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
 
         if hidden_states_img is not None:
             hidden_states = hidden_states + hidden_states_img
