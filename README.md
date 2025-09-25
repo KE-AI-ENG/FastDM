@@ -23,7 +23,7 @@ FastDM更多内容请参考[introduction](./doc/introduction.md)
 #### DiT-architecthre
 [FLUX](https://huggingface.co/black-forest-labs/FLUX.1-dev)/[FLUX-Krea](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev)/[FLUX-Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev)
 
-[QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)
+[QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)/[Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509)
 
 [StableDiffusion-3.5](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)
 
@@ -119,7 +119,7 @@ Qwen-Image模型通常需要五六十GB显存才可以运行, FLUX模型需要>2
 
 使用examples/demo文件夹下的image_edit.py脚本对图片进行编辑(支持qwen-img-edit和FLUX.1-Kontext-dev模型):
 
-`python image_edit.py --model-path /path/to/Image-Edit-Model --use-int8 --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background."`
+`python image_edit.py --model-path /path/to/Image-Edit-Model --use-int8 --architecture qwen --image-path ./ast_ride_horse.png --prompts "Change the horse's color to purple, with a flash light background." --task i2i`
 
 与Text2Image类似, 建议使用gradio_launch.py脚本搭建一个web服务来进行图片编辑，畅玩类似**nano-banana**的多图编辑模式。详情请参考[gradio服务demo](./examples/serve/readme.md)
 
