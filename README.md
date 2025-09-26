@@ -12,6 +12,8 @@ FastDM采用模型量化与Caching技术取得了较好的推理加速效果，�
 
 ![alt text](./assets/perf_graph.PNG)
 
+针对视频生成模型(如Wan2.2等)超长seq_length场景，attention计算成为性能瓶颈，FastDM支持了Sparse Attention加速。
+
 FastDM更多内容请参考[introduction](./doc/introduction.md)
 
 ### 模型支持
