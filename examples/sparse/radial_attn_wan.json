@@ -1,0 +1,10 @@
+{   
+    "sparse_algorithm": "radial",
+    "model_type": "wan",
+    "block_size": 64,
+    "enable_sparse": true,
+    "backend": "sparse_sageattn",
+    "decay_factor": 0.3,
+    "dense_layers": 1,
+    "dense_steps": 11
+}

@@ -1,8 +1,9 @@
-from typing import Optional
 import torch
 import flashinfer
 from einops import rearrange, repeat
 from sageattention import sageattn
+from typing import Type, Dict, Any
+from fastdm.sparse.config import SparseConfig, RadialAttnConfig
 try:
     from spas_sage_attn import block_sparse_sage2_attn_cuda
 except ImportError:
@@ -10,48 +11,64 @@ except ImportError:
     from sparse_sageattn import sparse_sageattn as block_sparse_sage2_attn_cuda
 
 class SparseAttn:
-    def __init__(self, block_size=128, model_type=None):
-        self.block_size = block_size
-        self.model_type = model_type
-        
-class RadialAttn(SparseAttn):    
+    _registry: Dict[str, Type["SparseAttn"]] = {}
+
+    def __init__(self, config: SparseConfig):
+        self.config = config
+
+    @classmethod
+    def register(cls, name: str):
+        def decorator(sub_cls):
+            cls._registry[name.lower()] = sub_cls
+            return sub_cls
+        return decorator
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SparseAttn":
+        """Create a sparse instance from a dictionary."""
+        config = SparseConfig.from_dict(data)
+        algo = config.sparse_algorithm.lower()
+        sparse_cls = cls._registry.get(algo)
+        if sparse_cls is None:
+            raise ValueError(f"Unknown sparse algorithm: {algo}")
+        return sparse_cls(config)
+
+    @classmethod
+    def from_json(cls, file_path: str) -> "SparseAttn":
+        """Load sparse configuration from a JSON file and create a sparse instance."""
+        config = SparseConfig.from_json(file_path)
+        algo = config.sparse_algorithm.lower()
+        sparse_cls = cls._registry.get(algo)
+        if sparse_cls is None:
+            raise ValueError(f"Unknown sparse algorithm: {algo}")
+        return sparse_cls(config)
+
+    def apply(self, query, key, value, pre_defined_mask=None):
+        raise NotImplementedError("Subclasses must implement apply method")
+
+
+@SparseAttn.register("radial")
+class RadialAttn(SparseAttn):
     _log_mask = None
 
-    def __init__(
-            self, 
-            block_size=128, 
-            model_type=None, 
-            decay_factor=0.5,
-            dense_layers=1,
-            dense_steps=5,
-            backend="sparse_sageattn"):
+    def __init__(self, config: RadialAttnConfig):
         """
         Radial attention with a decay factor and dense layers.
         Args:
-            block_size (int): The size of the blocks for block-sparse attention.
-            model_type (str): The type of the model, e.g., "wan", "hunyuan".
-            decay_factor (float): The factor by which the attention window decays.
-            dense_layers (int): The number of dense layers to apply.
-            dense_timesteps (int): The number of steps for dense layers.
+            config (RadialAttnConfig): Configuration object for radial sparse attention.
         """
-        super().__init__(block_size, model_type)
-        self.decay_factor = decay_factor
-        self.sparse_type = "radial"
-        self.dense_layers = dense_layers
-        self.dense_steps = dense_steps
-        self.backend = backend
-        self.current_steps_callback = None
-    
-    def post_init(self, video_token_num=25440, num_frame=16):
+        super().__init__(config)
+
+    def post_init(self, video_token_num=None, num_frame=None):
         self.video_token_num = video_token_num
         self.num_frame = num_frame
 
     def apply(self, query, key, value, pre_defined_mask=None):
-        orig_seqlen, num_head, hidden_dim = query.shape
+        _, num_head, hidden_dim = query.shape
         video_mask = self.queryLogMask(query)
         
-        if self.backend == "flashinfer":
-            video_mask = video_mask[:self.video_token_num // self.block_size, :self.video_token_num // self.block_size]
+        if self.config.backend == "flashinfer":
+            video_mask = video_mask[:self.video_token_num // self.config.block_size, :self.video_token_num // self.config.block_size]
             # perform block-sparse attention on the video tokens
             workspace_buffer = torch.empty(128 * 1024 * 1024, device=query.device, dtype=torch.uint8)
             bsr_wrapper = flashinfer.BlockSparseAttentionWrapper(
@@ -67,8 +84,8 @@ class RadialAttn(SparseAttn):
                 indices=indices,
                 M=self.video_token_num,
                 N=self.video_token_num,
-                R=self.block_size,
-                C=self.block_size,
+                R=self.config.block_size,
+                C=self.config.block_size,
                 num_qo_heads=num_head,
                 num_kv_heads=num_head,
                 head_dim=hidden_dim,
@@ -78,52 +95,52 @@ class RadialAttn(SparseAttn):
             )
             
             return self.FlashInferBackend(query, key, value,pre_defined_mask, bsr_wrapper)
-        elif self.backend == "sparse_sageattn":
+        elif self.config.backend == "sparse_sageattn":
             return self.SpargeSageAttnBackend(query, key, value, video_mask, pre_defined_mask)
             
     def queryLogMask(self, query):
         if RadialAttn._log_mask is None:
-            RadialAttn._log_mask = torch.ones((query.shape[0] // self.block_size, query.shape[0] // self.block_size), device=query.device, dtype=torch.bool)
-            RadialAttn._log_mask = self.gen_log_mask_shrinked(query, query.shape[0], self.video_token_num, self.num_frame, sparse_type=self.sparse_type, decay_factor=self.decay_factor, model_type=self.model_type, block_size=self.block_size)
+            RadialAttn._log_mask = torch.ones((query.shape[0] // self.config.block_size, query.shape[0] // self.config.block_size), device=query.device, dtype=torch.bool)
+            RadialAttn._log_mask = self.gen_log_mask_shrinked(query.shape[0], query.device)
         return RadialAttn._log_mask
 
 
-    def gen_log_mask_shrinked(self, query, s, video_token_num, num_frame, block_size=128, sparse_type="log", decay_factor=0.5, model_type=None):
+    def gen_log_mask_shrinked(self, s, device):
         """
         A more memory friendly version, we generate the attention mask of each frame pair at a time,
         shrinks it, and stores it into the final result
         """
-        final_log_mask = torch.zeros((s // block_size, s // block_size), device=query.device, dtype=torch.bool)
-        token_per_frame = video_token_num // num_frame
-        video_text_border = video_token_num // block_size
+        final_log_mask = torch.zeros((s // self.config.block_size, s // self.config.block_size), device=device, dtype=torch.bool)
+        token_per_frame = self.video_token_num // self.num_frame
+        video_text_border = self.video_token_num // self.config.block_size
 
-        col_indices = torch.arange(0, token_per_frame, device=query.device).view(1, -1)
-        row_indices = torch.arange(0, token_per_frame, device=query.device).view(-1, 1)
+        col_indices = torch.arange(0, token_per_frame, device=device).view(1, -1)
+        row_indices = torch.arange(0, token_per_frame, device=device).view(-1, 1)
         final_log_mask[video_text_border:] = True
         final_log_mask[:, video_text_border:] = True
-        for i in range(num_frame):
-            for j in range(num_frame):
-                local_mask = torch.zeros((token_per_frame, token_per_frame), device=query.device, dtype=torch.bool)
-                if j == 0 and model_type == "wan": # this is attention sink
-                    local_mask = torch.ones((token_per_frame, token_per_frame), device=query.device, dtype=torch.bool)
+        for i in range(self.num_frame):
+            for j in range(self.num_frame):
+                local_mask = torch.zeros((token_per_frame, token_per_frame), device=device, dtype=torch.bool)
+                if j == 0 and self.config.model_type == "wan": # this is attention sink
+                    local_mask = torch.ones((token_per_frame, token_per_frame), device=device, dtype=torch.bool)
                 else:
-                    window_width = self.get_window_width(i, j, token_per_frame, sparse_type, num_frame, decay_factor=decay_factor, block_size=block_size, model_type=model_type)
+                    window_width = self.get_window_width(i, j, token_per_frame)
                     local_mask = torch.abs(col_indices - row_indices) <= window_width
-                    split_mask = self.get_diagonal_split_mask(i, j, token_per_frame, sparse_type, query)
+                    split_mask = self.get_diagonal_split_mask(i, j, token_per_frame, device)
                     local_mask = torch.logical_and(local_mask, split_mask)
 
-                remainder_row = (i * token_per_frame) % block_size
-                remainder_col = (j * token_per_frame) % block_size
+                remainder_row = (i * token_per_frame) % self.config.block_size
+                remainder_col = (j * token_per_frame) % self.config.block_size
                 # get the padded size
-                all_length_row = remainder_row + ((token_per_frame - 1) // block_size + 1) * block_size
-                all_length_col = remainder_col + ((token_per_frame - 1) // block_size + 1) * block_size
-                padded_local_mask = torch.zeros((all_length_row, all_length_col), device=query.device, dtype=torch.bool)
+                all_length_row = remainder_row + ((token_per_frame - 1) // self.config.block_size + 1) * self.config.block_size
+                all_length_col = remainder_col + ((token_per_frame - 1) // self.config.block_size + 1) * self.config.block_size
+                padded_local_mask = torch.zeros((all_length_row, all_length_col), device=device, dtype=torch.bool)
                 padded_local_mask[remainder_row:remainder_row + token_per_frame, remainder_col:remainder_col + token_per_frame] = local_mask
                 # shrink the mask
-                block_mask = self.shrinkMaskStrict(padded_local_mask, block_size=block_size)
+                block_mask = self.shrinkMaskStrict(padded_local_mask)
                 # set the block mask to the final log mask
-                block_row_start = (i * token_per_frame) // block_size
-                block_col_start = (j * token_per_frame) // block_size
+                block_row_start = (i * token_per_frame) // self.config.block_size
+                block_col_start = (j * token_per_frame) // self.config.block_size
                 block_row_end = block_row_start + block_mask.shape[0]
                 block_col_end = block_col_start + block_mask.shape[1]
                 final_log_mask[block_row_start:block_row_end, block_col_start:block_col_end] = torch.logical_or(
@@ -132,38 +149,36 @@ class RadialAttn(SparseAttn):
         return final_log_mask
 
 
-    def get_diagonal_split_mask(self, i, j, token_per_frame, sparse_type, query):
-        assert(sparse_type in ["radial"])
+    def get_diagonal_split_mask(self, i, j, token_per_frame, device):
         dist = abs(i - j)
         group = dist.bit_length()
-        threshold = 128 # hardcoded threshold for now, which is equal to block-size
+        threshold = self.config.block_size
         decay_length = 2 ** token_per_frame.bit_length() / 2 ** group
         if decay_length >= threshold:
-            return torch.ones((token_per_frame, token_per_frame), device=query.device, dtype=torch.bool)
-        
+            return torch.ones((token_per_frame, token_per_frame), device=device, dtype=torch.bool)
+
         split_factor = int(threshold / decay_length)
         modular = dist % split_factor
         if modular == 0:
-            return torch.ones((token_per_frame, token_per_frame), device=query.device, dtype=torch.bool)
+            return torch.ones((token_per_frame, token_per_frame), device=device, dtype=torch.bool)
         else:
-            return torch.zeros((token_per_frame, token_per_frame), device=query.device, dtype=torch.bool)
+            return torch.zeros((token_per_frame, token_per_frame), device=device, dtype=torch.bool)
 
-    def get_window_width(self, i, j, token_per_frame, sparse_type, num_frame, decay_factor=1, block_size=128, model_type=None):
-        assert(sparse_type in ["radial"])
+    def get_window_width(self, i, j, token_per_frame):
         dist = abs(i - j)
-        if model_type == "wan":
+        if self.config.model_type == "wan":
             if dist < 1:
                 return token_per_frame
             if dist == 1:
                 return token_per_frame // 2
-        elif model_type == "hunyuan":
+        elif self.config.model_type == "hunyuan":
             if dist <= 1:
                 return token_per_frame
         else:
-            raise ValueError(f"Unknown model type: {model_type}")
+            raise ValueError(f"Unknown model type: {self.config.model_type}")
         group = dist.bit_length()
-        decay_length = 2 ** token_per_frame.bit_length() / 2 ** group * decay_factor
-        threshold = block_size
+        decay_length = 2 ** token_per_frame.bit_length() / 2 ** group * self.config.decay_factor
+        threshold = self.config.block_size
         if decay_length >= threshold:
             return decay_length
         else:
@@ -190,11 +205,11 @@ class RadialAttn(SparseAttn):
         indices = nonzero_indices[:, 1].to(dtype=torch.int32, device=query.device)
         return indices
 
-    def shrinkMaskStrict(self, mask, block_size=128):
+    def shrinkMaskStrict(self, mask):
         seqlen = mask.shape[0]
-        block_num = seqlen // block_size
-        mask = mask[:block_num * block_size, :block_num * block_size].view(block_num, block_size, block_num, block_size)
-        col_densities = mask.sum(dim = 1) / block_size
+        block_num = seqlen // self.config.block_size
+        mask = mask[:block_num * self.config.block_size, :block_num * self.config.block_size].view(block_num, self.config.block_size, block_num, self.config.block_size)
+        col_densities = mask.sum(dim = 1) / self.config.block_size
         # we want the minimum non-zero column density in the block
         non_zero_densities = col_densities > 0
         high_density_cols = col_densities > 1/3
@@ -232,7 +247,7 @@ class RadialAttn(SparseAttn):
         key_hnd = rearrange(key.unsqueeze(0), "b s h d -> b h s d")
         value_hnd = rearrange(value.unsqueeze(0), "b s h d -> b h s d")
         arch = get_cuda_arch_versions()[query.device.index]
-        converted_mask = repeat(sparge_mask_convert(mask=video_mask, block_size=self.block_size, arch=arch), "s t -> b h s t", b=query_hnd.shape[0], h=query_hnd.shape[1])
+        converted_mask = repeat(sparge_mask_convert(mask=video_mask, block_size=self.config.block_size, arch=arch), "s t -> b h s t", b=query_hnd.shape[0], h=query_hnd.shape[1])
         
         converted_mask = converted_mask.to(torch.int8)
         if pre_defined_mask is None:
@@ -258,25 +273,12 @@ class RadialAttn(SparseAttn):
             query_video,
             key_video,
             value_video,
-            mask_id=converted_mask[:, :, :self.video_token_num // self.block_size, :].contiguous(),
+            mask_id=converted_mask[:, :, :self.video_token_num // self.config.block_size, :].contiguous(),
             tensor_layout="HND",
         )
         
         # rearrange back to (s, h, d), we know that b = 1
         output_video = rearrange(output_video, "b h s d -> s (b h) d", b=1)
-        
-        # gt = sparse_sageattn(
-        #     query_video,
-        #     key_video,
-        #     value_video,
-        #     mask_id=None,
-        #     is_causal=False,
-        #     tensor_layout="HND",
-        # )[0]
-        
-        
-        
-        # import pdb; pdb.set_trace()
         
         output_text = flashinfer.single_prefill_with_kv_cache(
             q=query[self.video_token_num:, :, :],

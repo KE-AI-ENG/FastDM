@@ -26,7 +26,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
 
 # sage-attn and sparge-attn
-RUN git config --global url."https://kkgithub.com".insteadOf https://github.com
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install git+https://github.com/thu-ml/SageAttention.git
 RUN pip install git+https://github.com/thu-ml/SpargeAttn.git

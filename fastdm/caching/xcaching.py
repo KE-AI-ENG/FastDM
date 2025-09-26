@@ -4,6 +4,7 @@ from typing import Optional, Type, Dict, Any
 import numpy as np
 
 from fastdm.caching.config import CacheConfig, TeaCacheConfig, FBCacheConfig, DiCacheConfig
+from fastdm.sparse.xsparse import SparseAttn
 
 class AutoCache:
     _registry: Dict[str, Type["AutoCache"]] = {}
@@ -87,10 +88,11 @@ class AutoCache:
                 hidden_states = hidden_states + controlnet_samples[index_block // interval_control]
         return hidden_states
 
-    def _forward_wan_blocks(self, blocks, hidden_states, encoder_hidden_states, temb, image_rotary_emb):
+    def _forward_wan_blocks(self, blocks, hidden_states, encoder_hidden_states, temb, image_rotary_emb, sparse_attn):
         """Forward processing for WAN model type"""
-        for block in blocks:
-            hidden_states = block.forward(hidden_states, encoder_hidden_states, temb, image_rotary_emb)
+        for layer_index, block in enumerate(blocks):
+            layer_index = layer_index + 1  # Adjust layer index for WAN
+            hidden_states = block.forward(hidden_states, encoder_hidden_states, temb, image_rotary_emb, sparse_attn, layer_index)
         return hidden_states
     
     def _forward_transformer_blocks(self, model_type, blocks, hidden_states, encoder_hidden_states=None, 
@@ -147,6 +149,7 @@ class AutoCache:
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        sparse_attn: Optional[SparseAttn] = None
     ):
         raise NotImplementedError("Subclasses must implement apply_cache method")
 
@@ -195,6 +198,7 @@ class TeaCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        sparse_attn: Optional[SparseAttn] = None
     ):
         current_step = self.get_current_step()
         modulated_inp = self._get_modulated_input(model_type, hidden_states, encoder_hidden_states, temb, transformer_blocks)
@@ -330,6 +334,7 @@ class FBCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        sparse_attn: Optional[SparseAttn] = None
     ):
         current_step = self.get_current_step()
         
@@ -372,7 +377,7 @@ class FBCache(AutoCache):
             remaining_blocks = transformer_blocks[1:] if len(transformer_blocks) > 1 else []
             
             if model_type == "wan":
-                hidden_states = self._forward_wan_blocks(remaining_blocks, hidden_states, encoder_hidden_states, temb, image_rotary_emb)
+                hidden_states = self._forward_wan_blocks(remaining_blocks, hidden_states, encoder_hidden_states, temb, image_rotary_emb, sparse_attn)
             elif model_type == "flux":
                 encoder_hidden_states, hidden_states = self._forward_transformer_blocks(
                     model_type, remaining_blocks, hidden_states, encoder_hidden_states,
@@ -447,6 +452,7 @@ class DiCache(AutoCache):
         controlnet_block_samples=None,
         controlnet_single_block_samples = True,
         controlnet_blocks_repeat: bool = False,
+        sparse_attn: Optional[SparseAttn] = None
     ):
         current_step = self.get_current_step()
         total_steps = self.config.total_steps_callback() if self.config.total_steps_callback() is not None else 25

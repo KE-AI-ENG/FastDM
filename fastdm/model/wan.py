@@ -15,7 +15,7 @@ from fastdm.layer.transformer import FeedForward
 from fastdm.layer.qlinear import QLinear
 from fastdm.layer.transformer import WanAttention
 from fastdm.caching.xcaching import AutoCache
-from fastdm.sparse.xsparse import RadialAttn
+from fastdm.sparse.xsparse import SparseAttn
 
 class WanTransformerBlock:
     def __init__(
@@ -70,7 +70,8 @@ class WanTransformerBlock:
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
         rotary_emb: torch.Tensor,
-        sparse_attn: Optional[RadialAttn] = None,
+        sparse_attn: Optional[SparseAttn] = None,
+        layer_index: Optional[int] = None,
     ) -> torch.Tensor:
         if temb.ndim == 4:
             # temb: batch_size, seq_len, 6, inner_dim (wan2.2 ti2v)
@@ -92,7 +93,7 @@ class WanTransformerBlock:
 
         # 1. Self-attention
         norm_hidden_states = (self.norm1.forward(hidden_states) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
-        attn_output = self.attn1.forward(norm_hidden_states, None, None, rotary_emb, sparse_attn=sparse_attn)
+        attn_output = self.attn1.forward(norm_hidden_states, None, None, rotary_emb, sparse_attn=sparse_attn,layer_index=layer_index)
         hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
 
         # 2. Cross-attention
@@ -170,7 +171,7 @@ class WanTransformer3DModelCore(BaseModelCore):
         data_type = torch.bfloat16,
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
         cache: AutoCache = None,
-        sparse_attn: RadialAttn = None,
+        sparse_attn: SparseAttn = None,
     ) -> None:
         super().__init__("DiT")
 
@@ -306,7 +307,7 @@ class WanTransformer3DModelCore(BaseModelCore):
         post_patch_width = width // p_w
 
         # post init for radial sparse attention
-        if self.sparse_attn and isinstance(self.sparse_attn, RadialAttn):
+        if self.sparse_attn  and self.sparse_attn.config.sparse_algorithm == "radial":
             self.sparse_attn.post_init(video_token_num=post_patch_num_frames*post_patch_height*post_patch_width, num_frame=post_patch_num_frames)
 
         rotary_emb = self.rope.forward(hidden_states)
@@ -344,10 +345,11 @@ class WanTransformer3DModelCore(BaseModelCore):
                 image_rotary_emb=rotary_emb,
                 attention_kwargs=attention_kwargs,
                 transformer_blocks=self.blocks,
+                sparse_attn=self.sparse_attn,
             )
         else:
-            for block in self.blocks:
-                hidden_states = block.forward(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb, self.sparse_attn)
+            for layer_index, block in enumerate(self.blocks):
+                hidden_states = block.forward(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb, self.sparse_attn,layer_index)
 
         # 5. Output norm, projection & unpatchify
         if temb.ndim == 3:
