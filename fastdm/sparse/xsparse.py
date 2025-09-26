@@ -1,14 +1,12 @@
 import torch
 import flashinfer
 from einops import rearrange, repeat
-from sageattention import sageattn
 from typing import Type, Dict, Any
 from fastdm.sparse.config import SparseConfig, RadialAttnConfig
 try:
     from spas_sage_attn import block_sparse_sage2_attn_cuda
 except ImportError:
-    print("Using sparse_sageattn as block_sparse_sage2_attn_cuda")
-    from sparse_sageattn import sparse_sageattn as block_sparse_sage2_attn_cuda
+    raise ImportError("Please install the spas_sage_attn package to use Sparse Attention.")
 
 class SparseAttn:
     _registry: Dict[str, Type["SparseAttn"]] = {}
@@ -64,39 +62,8 @@ class RadialAttn(SparseAttn):
         self.num_frame = num_frame
 
     def apply(self, query, key, value, pre_defined_mask=None):
-        _, num_head, hidden_dim = query.shape
         video_mask = self.queryLogMask(query)
-        
-        if self.config.backend == "flashinfer":
-            video_mask = video_mask[:self.video_token_num // self.config.block_size, :self.video_token_num // self.config.block_size]
-            # perform block-sparse attention on the video tokens
-            workspace_buffer = torch.empty(128 * 1024 * 1024, device=query.device, dtype=torch.uint8)
-            bsr_wrapper = flashinfer.BlockSparseAttentionWrapper(
-                workspace_buffer,
-                backend="fa3",
-            )
-            
-            indptr = self.get_indptr_from_mask(video_mask, query)
-            indices = self.get_indices_from_mask(video_mask, query)
-            
-            bsr_wrapper.plan(
-                indptr=indptr,
-                indices=indices,
-                M=self.video_token_num,
-                N=self.video_token_num,
-                R=self.config.block_size,
-                C=self.config.block_size,
-                num_qo_heads=num_head,
-                num_kv_heads=num_head,
-                head_dim=hidden_dim,
-                q_data_type=query.dtype,
-                kv_data_type=key.dtype,
-                o_data_type=query.dtype,
-            )
-            
-            return self.FlashInferBackend(query, key, value,pre_defined_mask, bsr_wrapper)
-        elif self.config.backend == "sparse_sageattn":
-            return self.SpargeSageAttnBackend(query, key, value, video_mask, pre_defined_mask)
+        return self.SpargeSageAttnBackend(query, key, value, video_mask, pre_defined_mask)
             
     def queryLogMask(self, query):
         if RadialAttn._log_mask is None:
@@ -220,28 +187,6 @@ class RadialAttn(SparseAttn):
         return block_mask
     
     def SpargeSageAttnBackend(self, query, key, value, video_mask=None, pre_defined_mask=None):
-        if video_mask.all():
-            # dense case
-            kv_border = pre_defined_mask[0].sum() if pre_defined_mask is not None else key.shape[0]
-            output_video = sageattn(
-                query[:self.video_token_num, :, :].unsqueeze(0),
-                key[:kv_border, :, :].unsqueeze(0),
-                value[:kv_border, :, :].unsqueeze(0),
-                tensor_layout="NHD",
-            )[0]
-            
-            if pre_defined_mask is not None:
-                output_text = flashinfer.single_prefill_with_kv_cache(
-                    q=query[self.video_token_num:, :, :],
-                    k=key[:pre_defined_mask[0].sum(), :, :],
-                    v=value[:pre_defined_mask[0].sum(), :, :],
-                    causal=False,
-                    return_lse=False,
-                )
-                return torch.cat([output_video, output_text], dim=0)
-            else:
-                return output_video
-        
         # sparse-sageattention only supports (b, h, s, d) layout, need rearrange first
         query_hnd = rearrange(query.unsqueeze(0), "b s h d -> b h s d")
         key_hnd = rearrange(key.unsqueeze(0), "b s h d -> b h s d")
@@ -290,47 +235,6 @@ class RadialAttn(SparseAttn):
         
         return torch.cat([output_video, output_text], dim=0)
         
-
-    def FlashInferBackend(self, query, key, value, pre_defined_mask=None, bsr_wrapper=None):
-        if pre_defined_mask is not None:
-            video_video_o, video_video_o_lse = bsr_wrapper.run(
-                query[:self.video_token_num, :, :], 
-                key[:self.video_token_num, :, :],
-                value[:self.video_token_num, :, :],
-                return_lse=True
-            ) 
-            # perform non-causal flashinfer on the text tokens
-            video_text_o, video_text_o_lse = flashinfer.single_prefill_with_kv_cache(
-                q=query[:self.video_token_num, :, :],
-                k=key[self.video_token_num:, :, :],
-                v=value[self.video_token_num:, :, :],
-                causal=False,
-                return_lse=True,
-                custom_mask=pre_defined_mask[:self.video_token_num, self.video_token_num:]
-            )
-            
-            # merge the two results
-            o_video, _ = flashinfer.merge_state(v_a=video_video_o, s_a=video_video_o_lse, v_b=video_text_o, s_b=video_text_o_lse)
-            
-            o_text = flashinfer.single_prefill_with_kv_cache(
-                q=query[self.video_token_num:, :, :],
-                k=key,
-                v=value,
-                causal=False,
-                return_lse=False,
-                custom_mask=pre_defined_mask[self.video_token_num:, :]
-            )
-            
-            return torch.cat([o_video, o_text], dim=0)
-        else:
-            o = bsr_wrapper.run(
-                query[:self.video_token_num, :, :],
-                key[:self.video_token_num, :, :],
-                value[:self.video_token_num, :, :]
-            )
-            return o
-        
-
 def get_cuda_arch_versions():
     cuda_archs = []
     for i in range(torch.cuda.device_count()):
