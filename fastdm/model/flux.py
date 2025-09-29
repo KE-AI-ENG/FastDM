@@ -47,7 +47,6 @@ class FluxSingleTransformerBlock:
             eps=1e-6,
             pre_only=True,
             data_type=data_type,
-            fp8_attn_=False,
         )
 
     def forward(
@@ -109,7 +108,6 @@ class FluxTransformerBlock:
             qk_norm=qk_norm,
             eps=eps,
             data_type=data_type,
-            fp8_attn_=False,
         )
 
         self.norm2_gamma = None

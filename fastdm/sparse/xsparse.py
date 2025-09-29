@@ -1,13 +1,9 @@
 import torch
-import flashinfer
-from einops import rearrange, repeat
+# import flashinfer
+from einops import repeat
 from typing import Type, Dict, Any
 from fastdm.sparse.config import SparseConfig, RadialAttnConfig
-try:
-    from spas_sage_attn import block_sparse_sage2_attn_cuda
-except ImportError:
-    raise ImportError("Please install the spas_sage_attn package to use Sparse Attention.")
-
+from fastdm.kernel.operators_set import scaled_dot_product_attention, sparse_scaled_dot_product_attention
 class SparseAttn:
     _registry: Dict[str, Type["SparseAttn"]] = {}
 
@@ -187,52 +183,41 @@ class RadialAttn(SparseAttn):
         return block_mask
     
     def SpargeSageAttnBackend(self, query, key, value, video_mask=None, pre_defined_mask=None):
-        # sparse-sageattention only supports (b, h, s, d) layout, need rearrange first
-        query_hnd = rearrange(query.unsqueeze(0), "b s h d -> b h s d")
-        key_hnd = rearrange(key.unsqueeze(0), "b s h d -> b h s d")
-        value_hnd = rearrange(value.unsqueeze(0), "b s h d -> b h s d")
+        query = query.unsqueeze(0)
+        key = key.unsqueeze(0)
+        value = value.unsqueeze(0)
+        b, t, h, d = query.shape
         arch = get_cuda_arch_versions()[query.device.index]
-        converted_mask = repeat(sparge_mask_convert(mask=video_mask, block_size=self.config.block_size, arch=arch), "s t -> b h s t", b=query_hnd.shape[0], h=query_hnd.shape[1])
+        converted_mask = repeat(sparge_mask_convert(mask=video_mask, block_size=self.config.block_size, arch=arch), "s t -> b h s t", b=b, h=h)
         
         converted_mask = converted_mask.to(torch.int8)
         if pre_defined_mask is None:
             # wan case
-            output = block_sparse_sage2_attn_cuda(
-                query_hnd[:, :, :self.video_token_num, :],
-                key_hnd[:, :, :self.video_token_num, :],
-                value_hnd[:, :, :self.video_token_num, :],
-                mask_id=converted_mask,
-                tensor_layout="HND",
-            )
+            output = sparse_scaled_dot_product_attention(
+                query[:, :self.video_token_num, :, :].reshape(b, -1, h*d),
+                key[:, :self.video_token_num, :, :].reshape(b, -1, h*d),
+                value[:, :self.video_token_num, :, :].reshape(b, -1, h*d),
+                num_q_heads=h, num_kv_heads=h, head_dim=d, is_causal=False, scale=1.0/(query.shape[-1]**0.5), sparse_mask=converted_mask)
 
-            # rearrange back to (s, h, d), we know that b = 1
-            output = rearrange(output, "b h s d -> s (b h) d", b=1)
+            output = output.reshape(t, h, d)    # b=1
             return output
         
-        query_video = query_hnd[:, :, :self.video_token_num, :]
-        key_video = key_hnd
-        value_video = value_hnd
         kv_border = (pre_defined_mask[0].sum() + 63) // 64
         converted_mask[:, :, :, kv_border:] = False
-        output_video = block_sparse_sage2_attn_cuda(
-            query_video,
-            key_video,
-            value_video,
-            mask_id=converted_mask[:, :, :self.video_token_num // self.config.block_size, :].contiguous(),
-            tensor_layout="HND",
-        )
+        output_video = sparse_scaled_dot_product_attention(
+                query[:, :self.video_token_num, :, :].reshape(b, -1, h*d), 
+                key.reshape(b, -1, h*d), 
+                value.reshape(b, -1, h*d),
+                num_q_heads=h, num_kv_heads=h, head_dim=d, is_causal=False, scale=1.0/(query.shape[-1]**0.5), sparse_mask=converted_mask[:, :, :self.video_token_num // self.config.block_size, :].contiguous())
         
-        # rearrange back to (s, h, d), we know that b = 1
-        output_video = rearrange(output_video, "b h s d -> s (b h) d", b=1)
+        output_video = output_video.reshape(self.video_token_num, h, d)    # b=1
         
-        output_text = flashinfer.single_prefill_with_kv_cache(
-            q=query[self.video_token_num:, :, :],
-            k=key[:pre_defined_mask[0].sum(), :, :],
-            v=value[:pre_defined_mask[0].sum(), :, :],
-            causal=False,
-            return_lse=False,
-        )
-        
+        output_text = scaled_dot_product_attention(
+                query[:, self.video_token_num:, :, :].reshape(b, -1, h*d),
+                key[:, :pre_defined_mask[0].sum(), :, :].reshape(b, -1, h*d),
+                value[:, :pre_defined_mask[0].sum(), :, :].reshape(b, -1, h*d),
+                num_q_heads=h, num_kv_heads=h, head_dim=d, is_causal=False, scale=1.0/(query.shape[-1]**0.5))
+        output_text = output_text.reshape(t-self.video_token_num, h, d) # b=1
         return torch.cat([output_video, output_text], dim=0)
         
 def get_cuda_arch_versions():

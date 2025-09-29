@@ -148,7 +148,6 @@ class Attention:
         elementwise_affine: bool = True,
         is_causal: bool = False,
         data_type = torch.bfloat16,
-        fp8_attn_: bool = False,
     ):
         super().__init__()
 
@@ -169,7 +168,6 @@ class Attention:
         self.context_pre_only = context_pre_only
         self.pre_only = pre_only
         self.is_causal = is_causal
-        self.fp8_attn_ = fp8_attn_
 
         self.eps = eps
 
@@ -299,7 +297,7 @@ class Attention:
         if image_rotary_emb is not None:
             rotary_pos_embedding(query, key, head_dim, image_rotary_emb, is_neox=False)
 
-        hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=self.fp8_attn_)
+        hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale)
         hidden_states = hidden_states.to(query.dtype)
 
         if encoder_hidden_states is not None:
@@ -506,14 +504,14 @@ class WanAttention:
             key_img = self.add_k_proj.forward(encoder_hidden_states_img)
             value_img = self.add_v_proj.forward(encoder_hidden_states_img)
             key_img = rms_norm(key_img, self.norm_added_k_weight, self.eps)
-            hidden_states_img = scaled_dot_product_attention(query, key_img, value_img, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+            hidden_states_img = scaled_dot_product_attention(query, key_img, value_img, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale)
         
         if sparse_attn is not None and self.cross_attention_dim_head is None:  # sparse attention for self-attention
             current_step = sparse_attn.config.current_steps_callback() if sparse_attn.config.current_steps_callback() is not None else 0
             layer_index = kwargs.get("layer_index", 0)
             if current_step < sparse_attn.config.dense_steps or layer_index < sparse_attn.config.dense_layers:
                 # use dense attention
-                hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+                hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale)
             else:
                 query = query.unflatten(2, (self.heads, -1))
                 key = key.unflatten(2, (self.heads, -1))
@@ -528,7 +526,7 @@ class WanAttention:
                 hidden_states = rearrange(hidden_states, "(b s) h d -> b s h d", b=batch_size)
                 hidden_states = hidden_states.flatten(2, 3)
         else:
-            hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale, fp8_attn_=False)
+            hidden_states = scaled_dot_product_attention(query, key, value, self.heads, self.sdpa_kv_heads, self.sdpa_head_dim, is_causal=self.is_causal, scale=self.scale)
 
         if hidden_states_img is not None:
             hidden_states = hidden_states + hidden_states_img
