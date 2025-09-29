@@ -16,22 +16,28 @@ FastDM采用模型量化与Caching技术取得了较好的推理加速效果，�
 
 FastDM更多内容请参考[introduction](./doc/introduction.md)
 
+---
+<br>
+
 ### 模型支持
 业界主要有两种架构： UNET 或者 DiT, FastDM对这两种都进行了适配。
 #### UNET-architecthre
-[StableDiffusion-XL](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
+* [StableDiffusion-XL](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
 
-[SDXL-ControlNet](https://huggingface.co/collections/diffusers/sdxl-controlnets-64f9c35846f3f06f5abe351f)
+* [SDXL-ControlNet](https://huggingface.co/collections/diffusers/sdxl-controlnets-64f9c35846f3f06f5abe351f)
 #### DiT-architecthre
-[FLUX](https://huggingface.co/black-forest-labs/FLUX.1-dev)/[FLUX-Krea](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev)/[FLUX-Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev)
+* [FLUX](https://huggingface.co/black-forest-labs/FLUX.1-dev)/[FLUX-Krea](https://huggingface.co/black-forest-labs/FLUX.1-Krea-dev)/[FLUX-Kontext](https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev)
 
-[QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)/[Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509)
+* [QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)/[Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509)
 
-[StableDiffusion-3.5](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)
+* [StableDiffusion-3.5](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)
 
-[Wan2.2-T2V](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
+* [Wan2.2-T2V](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
 
-[FLUX-Controlnet](https://huggingface.co/XLabs-AI/flux-controlnet-collections)
+* [FLUX-Controlnet](https://huggingface.co/XLabs-AI/flux-controlnet-collections)
+
+---
+<br>
 
 ### 安装
 
@@ -41,15 +47,15 @@ FastDM更多内容请参考[introduction](./doc/introduction.md)
 
 ##### 依赖环境
 
-OS: Linux
+* OS: Linux
 
-Python: 3.9-3.12
+* Python: 3.9-3.12
 
-GPU: compute capability 7.5 or higher (e.g., 4090, A100, H100, H20, RTX8000, L4 etc.).
+* GPU: compute capability 7.5 or higher (e.g., 4090, A100, H100, H20, RTX8000, L4 etc.).
 
-CUDA-12.4 or later
+* CUDA-12.4 or later
 
-torch 2.7 or later
+* torch 2.7 or later
 
 ##### 安装命令
 
@@ -63,6 +69,9 @@ torch 2.7 or later
 - build docker
 
     `docker build -d Dockerfile -t fastdm:latest .`
+
+---
+<br>
 
 ### 使用
 
@@ -84,11 +93,11 @@ FastDM支持Wan2.2模型进行视频生成。由于A14B版本推理耗时非常�
 
 - text to video:
 
-`python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task t2v`
+  `python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Merge-Lightning-V1.1-Diffusers --architecture wan --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task t2v`
 
 - image to video:
 
-`python gen.py --model-path FastDM/Wan2.2-I2V-A14B-Merge-Lightning-V1.0-Diffusers --architecture wan-i2v --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./output.mp4 --num-frames 81 --fps 16 --prompts "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." --task i2v --image-path https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG`
+  `python gen.py --model-path FastDM/Wan2.2-I2V-A14B-Merge-Lightning-V1.0-Diffusers --architecture wan-i2v --guidance-scale 1.0 --height 512 --width 512 --steps 4 --use-fp8 --output-path ./output.mp4 --num-frames 81 --fps 16 --prompts "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." --task i2v --image-path https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG`
 
 
 以上命令生成一个5s（81/16=5）的视频，在H20上只需23s，非常迅速。
@@ -131,17 +140,20 @@ Qwen-Image模型通常需要五六十GB显存才可以运行, FLUX模型需要>2
 
 使用examples/demo文件夹下的contrlnet_demo.py脚本, 需要修改diffusers对应pipeline的代码, 可参考examples/demo下的readme文档。
 
+---
+<br>
+
 ### 性能数据汇总
 
-text2image：
+* text2image：
 
-  all-models: **height = 1024，width = 2048，num_inference_steps = 25**
+  * all-models: **height = 1024，width = 2048，num_inference_steps = 25**
 
-text2video：
+* text2video：
     
-  wan-5B: **height = 768，width = 768，num_frames = 121，num_inference_steps = 50**
+  * wan-5B: **height = 768，width = 768，num_frames = 121，num_inference_steps = 50**
     
-  wan-A14B：**height = 720，width = 1280，num_frames = 81，num_inference_steps = 40**
+  * wan-A14B：**height = 768，width = 1280，num_frames = 81，num_inference_steps = 40**
 
 **注**：以下数据中，H20性能数据使用了[SageAttention](https://github.com/thu-ml/SageAttention)。SageAttention性能比torch-sdpa算子有较大提升，详情可参考该[开源工程](https://github.com/thu-ml/SageAttention)。如果环境中安装了SageAttention，FastDM的CUDA-backend模式下会直接调用。
 
@@ -150,10 +162,15 @@ Qwen-Image的A100与RTX-8000数据使能了`--oom-resolve`以解决OOM问题
 <a id="perf"></a>
 ![image](./assets/perf.PNG)
 
+---
+<br>
 
 ### 模型精度测试
 
 使用examples/evaluation文件夹下的clip_score.py和fid.py脚本计算测评分数(更多内容请参考[evaluation](./examples/evaluation/README.md))：
+
+---
+<br>
 
 ### Acknowledgement
 
