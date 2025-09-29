@@ -65,6 +65,7 @@ if __name__ == "__main__":
         oom_resolve=args.oom_resolve,
         use_diffusers=args.use_diffusers,
         task=args.task,
+        sparse_attn_config=args.sparse_attn_config,
     )
     model_load_time = time.time() - model_load_start
     print(f"Model loading latency: {model_load_time:.4f} seconds")

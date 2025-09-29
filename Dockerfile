@@ -1,13 +1,14 @@
-FROM nvcr.io/nvidia/cuda:12.4.1-devel-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VERSION=3.10
 
+# Set the timezone to Shanghai
+RUN ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo 'Asia/Shanghai' > /etc/timezone
+
 WORKDIR /workspace
 
-RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections \
-    && echo 'tzdata tzdata/Zones/America select Los_Angeles' | debconf-set-selections \
-    && apt-get update -y \
+RUN apt-get update -y \
     && apt-get install -y ccache software-properties-common wget vim git curl sudo \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update -y \
@@ -24,10 +25,17 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
 
+# sage-attn and sparge-attn
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install git+https://github.com/thu-ml/SageAttention.git
+RUN pip install git+https://github.com/thu-ml/SpargeAttn.git
+
+# fastdm
 ADD . /workspace
 RUN pip install fastdm-1.1-cp310-cp310-linux_x86_64.whl
-# RUN --mount=type=cache,target=/root/.cache/pip \
-#     pip install -e .
+
+# latest diffusers
+RUN pip install git+https://github.com/huggingface/diffusers
 
 # build
 # docker build -f Dockerfile -t fastdm:latest .

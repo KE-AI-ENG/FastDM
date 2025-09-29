@@ -16,3 +16,4 @@ imageio # for video postprocessing
 imagehash # for video postprocessing
 imageio-ffmpeg # for video postprocessing
 aiohttp # gradio server
+einops # for sparse attention

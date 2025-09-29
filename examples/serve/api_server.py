@@ -246,8 +246,8 @@ async def get_model_info() -> ModelInfo:
 async def generate(request: GenerateRequest):
     """图像/视频生成接口"""
     log_data = request.dict()
-    log_data.pop('input_images', None)  # 不记录input_images的base64数据
-    logger.info(f"接收到编辑请求: {json.dumps(log_data, indent=2)}")
+    log_data.pop('input_image', None)  # 不记录input_image的base64数据
+    logger.info(f"接收到生成请求: {json.dumps(log_data, indent=2)}")
     # 验证参数
     if not request.prompt.strip():
         raise HTTPException(status_code=400, detail="提示词不能为空")
@@ -368,7 +368,8 @@ async def edit_image(request: EditRequest):
     else:
         input_images = request.input_images
     
-    assert input_images, "输入图像不能为空"
+    if not input_images:
+        raise HTTPException(status_code=400, detail="图片优化至少需要一张原始图片")
     
     try:
         input_images = batch_base64_to_images(input_images)

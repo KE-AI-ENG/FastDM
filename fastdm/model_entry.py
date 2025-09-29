@@ -25,6 +25,7 @@ from fastdm.model.wan import WanTransformer3DModelCore
 from fastdm.model.controlnets import SdxlControlNetModelCore, FluxControlNetModelCore
 from fastdm.kernel.utils import set_global_backend
 from fastdm.caching.xcaching import AutoCache
+from fastdm.sparse.xsparse import SparseAttn
 
 class ConfigMixin:
     """Configuration-related mixin class"""
@@ -451,7 +452,8 @@ class WanTransformer3DWrapper(BaseModelWrapper):
                 rope_max_seq_len = self.model_config_dict['rope_max_seq_len'],
                 data_type=self.config.dtype, 
                 quant_dtype=quant_type,
-                cache=cache
+                cache=cache,
+                sparse_attn=kwargs.get('sparse_attn', None),
         )
         
         if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):
@@ -538,7 +540,8 @@ class FastDMEngine:
                  cache_config=None,
                  oom_resolve=False,
                  use_diffusers = True,
-                 task="t2i"):
+                 task="t2i",
+                 sparse_attn_config=None):
         """
         初始化 FastDM 引擎
         
@@ -554,12 +557,14 @@ class FastDMEngine:
             oom_resolve: 是否启用 OOM 解决方案
             use_diffusers: 是否使用 diffusers 库
             task: 任务类型 (t2i/t2v/i2i/i2v)
+            sparse_attn_config: 稀疏注意力配置文件路径
         """
         self.architecture = architecture
         self.device = device
         self.oom_resolve = oom_resolve
         self.use_diffusers = use_diffusers
         self.task = task
+        self.sparse_attn_config = sparse_attn_config
         
         # 设置设备
         torch.cuda.set_device(device)
@@ -583,6 +588,14 @@ class FastDMEngine:
         else:
             self.cache = None
             self.cache_2 = None
+
+        # 初始化sparse attention
+        if sparse_attn_config:
+            if architecture not in ["wan", "wan-i2v"]:
+                raise ValueError("Sparse attention is only supported for Wan models")
+            self.sparse_attn = SparseAttn.from_json(sparse_attn_config)
+        else:
+            self.sparse_attn = None
             
         # 初始化模型
         self._init_model(model_path, kernel_backend)
@@ -625,6 +638,10 @@ class FastDMEngine:
                 if self.architecture == "wan" or self.architecture == "wan-i2v": # wan model use diff cache for low noise and high noise
                     self.cache_2.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
                     self.cache_2.config.total_steps_callback = lambda: self.pipe.scheduler.timesteps.shape[0]
+            
+            # 设置radial attn current step回调
+            if self.sparse_attn and self.sparse_attn.config.sparse_algorithm == "radial":     
+                self.sparse_attn.config.current_steps_callback = lambda: self.pipe.scheduler.step_index
                 
             # 替换模型实现
             if self.architecture == "sdxl":
@@ -660,7 +677,8 @@ class FastDMEngine:
                                 quant_type=self.quant_type, 
                                 kernel_backend=kernel_backend, 
                                 config_json=f"{self.model_path}/transformer/config.json",
-                                cache=self.cache).eval()
+                                cache=self.cache,
+                                sparse_attn=self.sparse_attn).eval()
                 if hasattr(self.pipe, 'transformer_2') and self.pipe.transformer_2 is not None:
                     self.pipe.transformer_2 = create_model("wan", 
                                     ckpt_path=self.pipe.transformer_2.state_dict(), 
@@ -668,7 +686,8 @@ class FastDMEngine:
                                     quant_type=self.quant_type, 
                                     kernel_backend=kernel_backend, 
                                     config_json=f"{self.model_path}/transformer_2/config.json",
-                                    cache=self.cache_2).eval()
+                                    cache=self.cache_2,
+                                    sparse_attn=self.sparse_attn).eval()
             else:
                 raise ValueError(
                     f"The {self.architecture} model is not supported!!!"
@@ -740,13 +759,18 @@ class FastDMEngine:
         }
 
         if src_image is not None and self.task == "i2v":
-            processed_image, new_gen_height, new_gen_width = self.image_processor(src_image, width=gen_width, height=gen_height)
+            processed_image, new_gen_height, new_gen_width = self.i2v_image_processor(src_image, width=gen_width, height=gen_height)
             kwargs["image"] = processed_image
         elif src_image is not None and self.task == "i2i":
-            new_gen_height, new_gen_width = gen_height, gen_width
-            kwargs["image"] = src_image
+            processed_image, new_gen_height, new_gen_width = self.i2i_image_processor(src_image, width=gen_width, height=gen_height)
+            kwargs["image"] = processed_image
         else:
             new_gen_height, new_gen_width = gen_height, gen_width
+
+        # 稀疏attention时，调整尺寸为block_size的倍数
+        if self.sparse_attn:
+            new_gen_height = (new_gen_height + self.sparse_attn.config.block_size - 1) // self.sparse_attn.config.block_size * self.sparse_attn.config.block_size
+            new_gen_width = (new_gen_width + self.sparse_attn.config.block_size - 1) // self.sparse_attn.config.block_size * self.sparse_attn.config.block_size
 
         kwargs["width"] = new_gen_width
         kwargs["height"] = new_gen_height
@@ -769,7 +793,7 @@ class FastDMEngine:
         return output.images[0]
 
 
-    def image_processor(self, input_image, width=832, height=480):
+    def i2v_image_processor(self, input_image, width=832, height=480):
         if isinstance(input_image, str):
             if not os.path.isfile(input_image):
                 raise FileNotFoundError(f"Input image file does not exist: {input_image}")
@@ -784,3 +808,27 @@ class FastDMEngine:
         width_ = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
         image = image.resize((width_, height_))
         return image, height_, width_
+    
+    def i2i_image_processor(self, input_image, width=832, height=480):
+        # input_image is a bse64 encoded string or a file path
+        if isinstance(input_image, str):
+            if os.path.isfile(input_image):
+                image = load_image(input_image)
+            else:
+                image = input_image
+            
+            return image, image.height, image.width,
+
+        # input_image is a list of base64 encoded strings or file paths
+        elif isinstance(input_image, list):
+            images = []
+            for img in input_image:
+                if os.path.isfile(img):
+                    images.append(load_image(img))
+                else:
+                    images.append(img)
+            max_width = max(img.width for img in images)
+            max_height = max(img.height for img in images)
+            return images, max_height, max_width 
+        else:
+            raise ValueError("Input image must be a file path or a base64 encoded string")

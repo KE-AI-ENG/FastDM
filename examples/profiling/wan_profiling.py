@@ -6,18 +6,18 @@ from diffusers import WanPipeline, AutoencoderKLWan
 
 from fastdm.model_entry import WanTransformer3DWrapper
 
-warmup_nums = 5
+warmup_nums = 1
 
-#random inputs
-# model_path = "/root/pretrained-models/wan/Wan2.2-T2V-A14B-Diffusers"
-# latents = torch.rand((1,16,21,90,160), device="cuda:0", dtype=torch.bfloat16)
-# timestep_ = torch.tensor([999], device="cuda:0",dtype=torch.int64)
-# prompt_embeds = torch.rand((1,512,4096), device="cuda:0", dtype=torch.bfloat16)
-
-model_path = "/root/pretrained-models/wan/Wan2.2-TI2V-5B-Diffusers"
-latents = torch.rand((1,48,31,44,80), device="cuda:0", dtype=torch.bfloat16)
-timestep_ = torch.tensor([999], device="cuda:0",dtype=torch.float32).expand((1,27280))
+# random inputs
+model_path = "/root/pretrained-models/wan/Wan2.2-T2V-A14B-Diffusers"
+latents = torch.rand((1,16,21,768//8,1280//8), device="cuda:0", dtype=torch.bfloat16)
+timestep_ = torch.tensor([999], device="cuda:0",dtype=torch.int64)
 prompt_embeds = torch.rand((1,512,4096), device="cuda:0", dtype=torch.bfloat16)
+
+# model_path = "/root/pretrained-models/wan/Wan2.2-TI2V-5B-Diffusers"
+# latents = torch.rand((1,48,31,44,80), device="cuda:0", dtype=torch.bfloat16)
+# timestep_ = torch.tensor([999], device="cuda:0",dtype=torch.float32).expand((1,27280))
+# prompt_embeds = torch.rand((1,512,4096), device="cuda:0", dtype=torch.bfloat16)
 
 vae = AutoencoderKLWan.from_pretrained(model_path, subfolder="vae", torch_dtype=torch.float32)
 pipe = WanPipeline.from_pretrained(model_path, vae=vae, torch_dtype=torch.bfloat16)

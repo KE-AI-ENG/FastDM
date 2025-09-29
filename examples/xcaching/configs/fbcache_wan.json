@@ -1,7 +1,7 @@
 {
     "cache_algorithm": "fbcache",
     "enable_caching": true,
-    "threshold": 0.1,
+    "threshold": 0.15,
     "wamup_steps": 8,
     "negtive_cache":true
 }

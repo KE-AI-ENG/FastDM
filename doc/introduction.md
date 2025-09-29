@@ -97,6 +97,18 @@ self-attention的量化，主流方法均采用per-head或更细尺度，但是�
     ```
 
 
+### Sparse Attention
+
+视频生成模型Wan等在生成尺寸较大或者时间较长的视频时上下文很长，此时attention计算耗时成为性能瓶颈。FastDM针对这个问题采用稀疏attention的方法进行优化。目前支持了[radial attention算法](https://github.com/mit-han-lab/radial-attention)，目前只支持了Wan视频生成模型。
+
+它可以和量化以及cache加速一起使用，进一步提升性能。
+
+- 使用示例：
+
+```python
+python gen.py --model-path /path/to/Wan2.2-T2V-A14B-Diffusers --architecture wan --guidance-scale 4.0 --height 512 --width 512 --steps 40 --use-fp8 --output-path ./wan-a14b-lightningv1.1-fp8-guid1.mp4 --num-frames 81 --fps 16 --prompts "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." --task t2v --sparse-attn-config ../examples/sparse/radial_attn_wan.json --cache-config ../examples/xcaching/configs/fbcache_wan.json
+```
+
 
 ### 模型结构
 

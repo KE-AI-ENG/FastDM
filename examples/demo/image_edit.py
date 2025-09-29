@@ -43,7 +43,7 @@ if __name__ == "__main__":
     print(f"Model loading time: {model_load_time:.4f} seconds")
 
     # 加载源图片
-    src_image = load_image(args.image_path)
+    # src_image = load_image(args.image_path)
 
     # 预热
     for i in range(args.num_warmup_runs):
@@ -51,7 +51,7 @@ if __name__ == "__main__":
         engine.generate(
             prompt=args.prompts,
             negative_prompt=args.negative_prompts,
-            src_image=src_image,
+            src_image=args.image_path,
             steps=args.steps,
             guidance_scale=args.guidance_scale,
             gen_seed=args.seed,
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     output = engine.generate(
         prompt=args.prompts,
         negative_prompt=args.negative_prompts,
-        src_image=src_image,
+        src_image=args.image_path,
         steps=args.steps,
         guidance_scale=args.guidance_scale,
         gen_seed=args.seed,
