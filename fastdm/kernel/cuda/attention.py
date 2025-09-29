@@ -168,7 +168,6 @@ def sdpa_cuda(
         head_dim: Dimension of each head.
         is_causal: Whether to apply causal masking.
         scale: Scaling factor for the attention scores.
-        fp8_attn_: for hopper gpu, we use fp8-attn to get better performance. if your generation results is worse than baseline, please disable it.
     Returns:
         torch.Tensor: The output tensor after applying attention.
     """

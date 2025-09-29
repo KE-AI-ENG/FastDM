@@ -161,9 +161,6 @@ def scaled_dot_product_attention(
     head_dim: int,
     is_causal: bool = False,
     scale: Optional[float] = None,
-    fp8_attn_: bool=False,
-    sparge_attn_: bool = False, 
-    sparse_mask: Optional[torch.Tensor] = None, 
 ) -> torch.Tensor:
     """
     Perform scaled dot-product attention.
@@ -176,7 +173,6 @@ def scaled_dot_product_attention(
         head_dim: Dimension of each head.
         is_causal: Whether to apply causal masking.
         scale: Scaling factor for the attention scores.
-        fp8_attn_: for hopper gpu, we use fp8-attn to get better performance. if your generation results is worse than baseline, please disable it.
     Returns:
         torch.Tensor: The output tensor after applying attention.
     """
