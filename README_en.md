@@ -10,6 +10,8 @@ The following figure shows the latency of various models on the H20 card (for de
 
 ![alt text](./assets/perf_graph.PNG)
 
+For video generation models (such as Wan2.2), the long sequence length becomes a performance bottleneck for attention computation. FastDM supports Sparse Attention acceleration.
+
 Please refer to [introduction](./doc/introduction.md) for more details.
 
 ### Diffusion models
