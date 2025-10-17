@@ -1,0 +1,30 @@
+pretrained_model_name_or_path: Qwen/Qwen-Image
+data_config:
+  train_batch_size: 1
+  num_workers: 4
+  img_size: 2048
+  caption_dropout_rate: 0.1
+  img_dir: ./dataset-path # change to your dataset path
+  random_ratio: false # support multi crop preprocessing
+  caption_type: txt
+report_to: wandb
+train_batch_size: 1
+output_dir: ./output
+max_train_steps: 3000
+learning_rate: 1e-4
+lr_scheduler: constant
+lr_warmup_steps: 10
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_weight_decay: 0.01
+adam_epsilon: 1e-8
+max_grad_norm: 1.0
+logging_dir: logs
+mixed_precision: "bf16"
+checkpointing_steps: 200
+checkpoints_total_limit: 5
+tracker_project_name: fly-lora
+tracker_run_name: naohai-test
+resume_from_checkpoint: latest
+gradient_accumulation_steps: 1
+rank: 16
