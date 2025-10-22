@@ -37,7 +37,8 @@ if __name__ == "__main__":
         kernel_backend=args.kernel_backend,
         cache_config=args.cache_config,
         oom_resolve=args.oom_resolve,
-        use_diffusers=args.use_diffusers
+        use_diffusers=args.use_diffusers,
+        task=args.task
     )
     model_load_time = time.time() - model_load_start
     print(f"Model loading time: {model_load_time:.4f} seconds")
