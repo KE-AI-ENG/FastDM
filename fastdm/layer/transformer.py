@@ -1,7 +1,8 @@
 # Adapted from
 # https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention.py
 
-from typing import Optional, Tuple
+import os
+from typing import Optional, Tuple, Dict, Any
 
 import torch
 from einops import rearrange
@@ -148,6 +149,7 @@ class Attention:
         elementwise_affine: bool = True,
         is_causal: bool = False,
         data_type = torch.bfloat16,
+        peft_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
 
@@ -168,6 +170,7 @@ class Attention:
         self.context_pre_only = context_pre_only
         self.pre_only = pre_only
         self.is_causal = is_causal
+        self.peft_config = peft_config
 
         self.eps = eps
 
@@ -229,6 +232,25 @@ class Attention:
             self.norm_added_q = None
             self.norm_added_k = None
 
+        if self.peft_config is not None: # init lora model
+            self.lora_A_q = {}
+            self.lora_A_k = {}
+            self.lora_A_v = {}
+            self.lora_B_q = {}
+            self.lora_B_k = {}
+            self.lora_B_v = {}
+            self.lora_A_out = {}
+            self.lora_B_out = {}
+            for lora_name, lora_config in self.peft_config.items():
+                self.lora_A_q[lora_name] = QLinear(query_dim, lora_config.lora_alpha, bias=False, data_type=data_type)
+                self.lora_A_k[lora_name] = QLinear(query_dim, lora_config.lora_alpha, bias=False, data_type=data_type)
+                self.lora_A_v[lora_name] = QLinear(query_dim, lora_config.lora_alpha, bias=False, data_type=data_type)
+                self.lora_B_q[lora_name] = QLinear(lora_config.lora_alpha, self.inner_dim, bias=False, data_type=data_type)
+                self.lora_B_k[lora_name] = QLinear(lora_config.lora_alpha, self.inner_kv_dim, bias=False, data_type=data_type)
+                self.lora_B_v[lora_name] = QLinear(lora_config.lora_alpha, self.inner_kv_dim, bias=False, data_type=data_type)
+                self.lora_A_out[lora_name] = QLinear(self.inner_dim, lora_config.lora_alpha, bias=False, data_type=data_type)
+                self.lora_B_out[lora_name] = QLinear(lora_config.lora_alpha, self.out_dim, bias=False, data_type=data_type)
+                
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -342,6 +364,12 @@ class Attention:
         img_key = img_qkv_fusion[:, :, self.inner_dim:(self.inner_dim + self.inner_kv_dim)]
         img_value = img_qkv_fusion[:, :, (self.inner_dim + self.inner_kv_dim):]
 
+        lora_activate_name = os.getenv("LORA_ACTIVATE", None) # lora model
+        if self.peft_config is not None and lora_activate_name is not None: 
+            img_query = img_query + self.lora_B_q[lora_activate_name].forward(self.lora_A_q[lora_activate_name].forward(hidden_states))
+            img_key = img_key + self.lora_B_k[lora_activate_name].forward(self.lora_A_k[lora_activate_name].forward(hidden_states))
+            img_value = img_value + self.lora_B_v[lora_activate_name].forward(self.lora_A_v[lora_activate_name].forward(hidden_states))
+
         # Compute QKV for text stream (context projections)
         txt_qkv_fusion = self.add_qkv_proj.forward(encoder_hidden_states)
         txt_query = txt_qkv_fusion[:, :, 0:self.inner_dim]
@@ -384,8 +412,11 @@ class Attention:
         img_attn_output = joint_hidden_states[:, seq_txt:, :]  # Image part
 
         # Apply output projections
-        img_attn_output = self.to_out.forward(img_attn_output)
-
+        base_img_attn_output = self.to_out.forward(img_attn_output)
+        if self.peft_config is not None and lora_activate_name is not None: 
+            img_attn_output = base_img_attn_output + self.lora_B_out[lora_activate_name].forward(self.lora_A_out[lora_activate_name].forward(img_attn_output))
+        else:
+            img_attn_output = base_img_attn_output
         txt_attn_output = self.to_add_out.forward(txt_attn_output)
 
         return img_attn_output, txt_attn_output

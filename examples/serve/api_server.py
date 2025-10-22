@@ -60,6 +60,7 @@ class GenerateRequest(BaseModel):
     fps: int = Field(default=24, description="视频帧率（wan模型）")
     max_seq_len: Optional[int] = Field(default=512, description="最大序列长度")
     input_image: Optional[str] = Field(None, description="base64编码的源图像，仅在i2v任务中使用")
+    lora_name: Optional[str] = Field(None, description="LoRA模型名称，仅在Qwen模型中使用")
 
 class EditRequest(GenerateRequest):
     input_images: Optional[Union[str, List[str]]] = Field(None, description="base64编码的源图像")
@@ -290,6 +291,12 @@ async def generate(request: GenerateRequest):
         # Qwen模型使用true_cfg_scale
         generate_params['true_cfg_scale'] = request.true_cfg_scale        
     
+    # 配置lora参数    
+    if request.lora_name:
+        if request.lora_name not in engine.lora_loaded_list:
+            raise HTTPException(status_code=400, detail=f"错误的lora模型: {request.lora_name}, 当前支持的lora模型: {engine.lora_loaded_list}")
+        generate_params['lora_name'] = request.lora_name
+
     try:
         # 执行生成
         # logger.info(f"engine generate params: {json.dumps(generate_params, indent=2)}")
@@ -449,6 +456,19 @@ if __name__ == '__main__':
     elif args.architecture == "wan-i2v-lightning":
         args.architecture = "wan-i2v"
         wan_lightning = True
+    
+    if args.lora_config is not None:
+        assert args.architecture in ["qwen"], "LoRA is only supported for Qwen architecture currently"
+        try:
+            if os.path.isfile(args.lora_config):
+                with open(args.lora_config, 'r') as f:
+                    lora_config = json.load(f)
+            else:
+                lora_config = json.loads(args.lora_config)
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON format in Lora config: {args.lora_config}")
+    else:
+        lora_config = None
 
     model_load_start = time.time()
     try:
@@ -464,6 +484,7 @@ if __name__ == '__main__':
             oom_resolve=args.oom_resolve,
             use_diffusers=args.use_diffusers,
             task=args.task,
+            lora_config=lora_config,
         )
         model_info = ModelInfo(
             model_name=args.served_model_name

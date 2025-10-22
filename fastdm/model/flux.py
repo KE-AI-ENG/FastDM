@@ -218,6 +218,7 @@ class FluxTransformer2DModelCore(BaseModelCore):
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
         cache: AutoCache = None,
         oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
+        peft_config: Optional[Dict[str, Any]] = None,  # Peft config for LoRA
     ):
         super().__init__(type="DiT")
 

@@ -16,7 +16,7 @@ from fastdm.caching.xcaching import AutoCache
 
 class QwenImageTransformerBlock:
     def __init__(
-        self, dim: int, num_attention_heads: int, attention_head_dim: int, qk_norm: str = "rms_norm", eps: float = 1e-6, data_type = torch.bfloat16
+        self, dim: int, num_attention_heads: int, attention_head_dim: int, qk_norm: str = "rms_norm", eps: float = 1e-6, data_type = torch.bfloat16, peft_config: Optional[Dict[str, Any]] = None
     ):
         super().__init__()
 
@@ -40,7 +40,8 @@ class QwenImageTransformerBlock:
             bias=True,
             qk_norm=qk_norm,
             eps=eps,
-            data_type=data_type
+            data_type=data_type,
+            peft_config=peft_config,  # Peft config for LoRA
         )
 
         self.img_mlp = FeedForward(dim=dim, dim_out=dim, activation_fn="gelu-approximate", data_type=data_type)
@@ -156,10 +157,12 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
         quant_dtype: torch.dtype = torch.float8_e4m3fn,
         cache: AutoCache = None,
         oom_ressolve: bool=False, #The pipeline will running in cpu if it set to True, so we need copy tensor to gpu in forward.
+        peft_config: Optional[Dict[str, Any]] = None,  # Peft config for LoRA
     ):
         super().__init__("DiT")
 
         self.quant_dtype = quant_dtype
+        self.peft_config = peft_config
 
         self.need_resolve_oom = oom_ressolve
 
@@ -183,7 +186,8 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
                     dim=self.inner_dim,
                     num_attention_heads=num_attention_heads,
                     attention_head_dim=attention_head_dim,
-                    data_type=data_type
+                    data_type=data_type,
+                    peft_config=self.peft_config,
                 )
                 for _ in range(num_layers)
             ]
@@ -223,13 +227,36 @@ class QwenImageTransformer2DModelCore(BaseModelCore):
             #attention
             self.transformer_blocks[i].attn.norm_q_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_q.weight"])
             self.transformer_blocks[i].attn.norm_k_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_k.weight"])
-            self.init_weight([f"transformer_blocks.{i}.attn.to_q", f"transformer_blocks.{i}.attn.to_k", f"transformer_blocks.{i}.attn.to_v"], self.transformer_blocks[i].attn.qkv, self.quant_dtype)
             self.init_weight([f"transformer_blocks.{i}.attn.add_q_proj", f"transformer_blocks.{i}.attn.add_k_proj", f"transformer_blocks.{i}.attn.add_v_proj"], self.transformer_blocks[i].attn.add_qkv_proj, self.quant_dtype)
-            self.init_weight([f"transformer_blocks.{i}.attn.to_out.0"], self.transformer_blocks[i].attn.to_out, self.quant_dtype)
             self.init_weight([f"transformer_blocks.{i}.attn.to_add_out"], self.transformer_blocks[i].attn.to_add_out, self.quant_dtype)
             self.transformer_blocks[i].attn.norm_added_q_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_added_q.weight"])
             self.transformer_blocks[i].attn.norm_added_k_weight = self.init_weight([f"transformer_blocks.{i}.attn.norm_added_k.weight"])
             
+            # if LoRA is enabled, we need to load the LoRA weights for the attention layers
+            if self.peft_config is not None:
+                self.init_weight([f"transformer_blocks.{i}.attn.to_q.base_layer", f"transformer_blocks.{i}.attn.to_k.base_layer", f"transformer_blocks.{i}.attn.to_v.base_layer"], self.transformer_blocks[i].attn.qkv, self.quant_dtype)
+                self.init_weight([f"transformer_blocks.{i}.attn.to_out.0.base_layer"], self.transformer_blocks[i].attn.to_out, self.quant_dtype)
+                for lora_name, _ in self.peft_config.items():
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_q.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_q[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_k.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_k[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_v.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_v[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_q.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_q[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_k.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_k[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_v.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_v[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_out.0.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_out[lora_name], self.quant_dtype)
+                    self.init_weight([f"transformer_blocks.{i}.attn.to_out.0.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_out[lora_name], self.quant_dtype)
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_q.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_q[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_k.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_k[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_v.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_v[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_q.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_q[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_k.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_k[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_v.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_v[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_out.0.lora_A.{lora_name}"], self.transformer_blocks[i].attn.lora_A_out[lora_name])
+                    # self.init_weight([f"transformer_blocks.{i}.attn.to_out.0.lora_B.{lora_name}"], self.transformer_blocks[i].attn.lora_B_out[lora_name])
+            else:
+                self.init_weight([f"transformer_blocks.{i}.attn.to_q", f"transformer_blocks.{i}.attn.to_k", f"transformer_blocks.{i}.attn.to_v"], self.transformer_blocks[i].attn.qkv, self.quant_dtype)
+                self.init_weight([f"transformer_blocks.{i}.attn.to_out.0"], self.transformer_blocks[i].attn.to_out, self.quant_dtype)
+
             #feedforward
             self.init_weight([f"transformer_blocks.{i}.img_mlp.net.0.proj"], self.transformer_blocks[i].img_mlp.act_fn.proj, self.quant_dtype)
             self.init_weight([f"transformer_blocks.{i}.img_mlp.net.2"], self.transformer_blocks[i].img_mlp.ff_out_proj, self.quant_dtype)

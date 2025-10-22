@@ -173,6 +173,8 @@ class QwenTransformerWrapper(BaseModelWrapper):
 
         self.need_resolve_oom = need_resolve_oom
 
+        self.peft_config = kwargs.get('peft_config', None)
+
         self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
     
     def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
@@ -541,7 +543,8 @@ class FastDMEngine:
                  oom_resolve=False,
                  use_diffusers = True,
                  task="t2i",
-                 sparse_attn_config=None):
+                 sparse_attn_config=None,
+                 lora_config=None):
         """
         初始化 FastDM 引擎
         
@@ -558,6 +561,7 @@ class FastDMEngine:
             use_diffusers: 是否使用 diffusers 库
             task: 任务类型 (t2i/t2v/i2i/i2v)
             sparse_attn_config: 稀疏注意力配置文件路径
+            lora_config: LoRA 配置Dict
         """
         self.architecture = architecture
         self.device = device
@@ -596,6 +600,9 @@ class FastDMEngine:
             self.sparse_attn = SparseAttn.from_json(sparse_attn_config)
         else:
             self.sparse_attn = None
+
+        self.lora_config = lora_config
+        self.lora_loaded_list = []
             
         # 初始化模型
         self._init_model(model_path, kernel_backend)
@@ -626,6 +633,12 @@ class FastDMEngine:
                 use_safetensors=True
             )
         
+        # load lora weights
+        if self.lora_config:
+            for name, weight in self.lora_config.items():
+                self.pipe.load_lora_weights(weight, adapter_name=name)
+                self.lora_loaded_list.append(name)
+
         if self.use_diffusers:
             self.pipe.to("cuda")
         else:
@@ -664,6 +677,7 @@ class FastDMEngine:
                     kernel_backend=kernel_backend,
                     cache=self.cache,
                     need_resolve_oom=self.oom_resolve,
+                    peft_config=self.pipe.transformer.peft_config if hasattr(self.pipe.transformer, 'peft_config') else None,
                 ).eval()
                 
                 # 处理 OOM
@@ -727,7 +741,8 @@ class FastDMEngine:
                 gen_seed=42,
                 gen_width=512,
                 gen_height=512,
-                max_seq_len=512):
+                max_seq_len=512,
+                lora_name=None):
         """
         生成图像或视频
         
@@ -783,7 +798,14 @@ class FastDMEngine:
             kwargs["true_cfg_scale"] = true_cfg_scale
         else:
             kwargs["guidance_scale"] = guidance_scale
-            
+
+        # 通过环境变量设置本次推理使用的lora
+        if lora_name is not None:
+            os.environ["LORA_ACTIVATE"] = lora_name
+        else:
+            if "LORA_ACTIVATE" in os.environ:
+                del os.environ["LORA_ACTIVATE"]
+                
         # 生成
         with torch.inference_mode():
             output = self.pipe(**kwargs)

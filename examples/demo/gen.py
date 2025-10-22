@@ -28,6 +28,8 @@ python gen.py
 '''
 
 import time
+import json
+import os
 
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -51,6 +53,18 @@ if __name__ == "__main__":
     
     if args.image_path is not None:
         assert args.task in ["i2i", "i2v"], "Image path is only valid for i2i or i2v tasks"
+    
+    if args.lora_config is not None:
+        assert args.architecture in ["qwen"], "LoRA is only supported for Qwen architecture currently"
+        try:
+            if os.path.isfile(args.lora_config):
+                with open(args.lora_config, 'r') as f:
+                    lora_config = json.load(f)
+            else:
+                lora_config = json.loads(args.lora_config)
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON format in Lora config: {args.lora_config}")
+        lora_name = next(iter(lora_config), None) # only support one lora model in gen.py
 
     model_load_start = time.time()
     engine = FastDMEngine(
@@ -66,6 +80,7 @@ if __name__ == "__main__":
         use_diffusers=args.use_diffusers,
         task=args.task,
         sparse_attn_config=args.sparse_attn_config,
+        lora_config=lora_config if args.lora_config is not None else None,
     )
     model_load_time = time.time() - model_load_start
     print(f"Model loading latency: {model_load_time:.4f} seconds")
@@ -84,7 +99,8 @@ if __name__ == "__main__":
             gen_height=args.height,
             max_seq_len=args.max_seq_len,
             true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None,
-            src_image=args.image_path if args.task == "i2v" else None
+            src_image=args.image_path if args.task == "i2v" else None,
+            lora_name=lora_name if args.lora_config is not None else None
         )
     
     # 生成
@@ -100,7 +116,8 @@ if __name__ == "__main__":
                 gen_height=args.height,
                 max_seq_len=args.max_seq_len,
                 true_cfg_scale= args.true_cfg_scale if "qwen" == args.architecture else None,
-                src_image=args.image_path if args.task == "i2v" else None)
+                src_image=args.image_path if args.task == "i2v" else None,
+                lora_name=lora_name if args.lora_config is not None else None)
     torch.cuda.synchronize()
     generation_time = time.time() - gen_start_time
     print(f"Generation latency: {generation_time:.4f} seconds")

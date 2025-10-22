@@ -218,7 +218,9 @@ class SD3TransformerModelCore(BaseModelCore):
                 qk_norm: Optional[str] = "rms_norm",
                 data_type = torch.bfloat16,
                 quant_dtype: torch.dtype = torch.float8_e4m3fn,
-                cache: AutoCache = None):
+                cache: AutoCache = None,
+                peft_config: Optional[Dict[str, Any]] = None,  # Peft config for LoRA
+                ):
         super().__init__(type="DiT")
 
         # This is needed to imitate huggingface config behavior
