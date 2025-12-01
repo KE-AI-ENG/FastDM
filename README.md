@@ -30,6 +30,8 @@ FastDM更多内容请参考[introduction](./doc/introduction.md)
 
 * [QwenImage](https://huggingface.co/Qwen/Qwen-Image)/[Qwen-Image-Edit](https://huggingface.co/Qwen/Qwen-Image-Edit)/[Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509)
 
+* [ZImage](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
+
 * [StableDiffusion-3.5](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)
 
 * [Wan2.2-T2V](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
@@ -104,11 +106,11 @@ FastDM支持Wan2.2模型进行视频生成。由于A14B版本推理耗时非常�
 
 #### Text2Image:
 
-不使用server模式，也可以直接运行examples/demo文件夹下的gen.py脚本进行生图：
+不使用server模式，也可以直接运行examples/demo文件夹下的gen.py脚本进行生图(用[ZImage](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)生成一张图片)：
 
-`python gen.py --model-path /path/to/FLUX.1-Krea-dev --architecture flux --height 1024 --width 2048 --steps 25 --use-fp8 --output-path ./flux-fp8.png --prompts "A frog holding a sign that says hello world"`
+`python gen.py --model-path /path/to/Z-Image-Turbo --architecture zimage --height 1024 --width 1024 --steps 9 --output-path ./zimage-fastdm-bfloat16.png --guidance-scale 0 --use-fp8 --prompts "Young Chinese woman in red Hanfu, intricate embroidery. Impeccable makeup, red floral forehead pattern. Elaborate high bun, golden phoenix headdress, red flowers, beads. Holds round folding fan with lady, trees, bird. Neon lightning-bolt lamp (⚡), bright yellow glow, above extended left palm. Soft-lit outdoor night background, silhouetted tiered pagoda (西安大雁塔), blurred colorful distant lights."`
 
-##### 小显存卡跑Qwen-Image/FLUX(比如4090D-24GB)
+##### 小显存卡跑Qwen-Image/ZImage/FLUX(比如4090D-24GB)
 
 Qwen-Image模型通常需要五六十GB显存才可以运行, FLUX模型需要>24GB, 否则会OOM。可以配置`--oom-resolve`减少显存占用，这样4090/4090D-24G，A100-40G等小显存的卡就都可以支持。
 

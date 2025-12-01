@@ -21,6 +21,7 @@ from fastdm.model.sdxl import SDXLUNetModelCore
 from fastdm.model.sd35 import SD3TransformerModelCore
 from fastdm.model.flux import FluxTransformer2DModelCore
 from fastdm.model.qwenimage import QwenImageTransformer2DModelCore
+from fastdm.model.zimage import ZImageTransformer2DModelCore
 from fastdm.model.wan import WanTransformer3DModelCore
 from fastdm.model.controlnets import SdxlControlNetModelCore, FluxControlNetModelCore
 from fastdm.kernel.utils import set_global_backend
@@ -181,6 +182,70 @@ class QwenTransformerWrapper(BaseModelWrapper):
             in_channels=self.config.in_channels, 
             out_channels=self.config.out_channels,
             guidance_embeds=self.config.guidance_embeds, 
+            data_type=self.config.dtype,
+            quant_dtype=quant_type,
+            cache=cache,
+            oom_ressolve=self.need_resolve_oom,
+            **kwargs
+        )
+        
+        if isinstance(ckpt_path, dict) or os.path.exists(ckpt_path):
+            self.core_model.weight_loading(ckpt_path)
+
+class ZImageTransformerWrapper(BaseModelWrapper):
+    """ZImage Transformer wrapper"""
+    
+    def __init__(
+        self, 
+        ckpt_path = None,
+        in_channels: int = 16, 
+        out_channels: int = 16,
+        dtype: torch.dtype = torch.bfloat16, 
+        quant_type: Optional[torch.dtype] = None, 
+        kernel_backend: str = "torch",
+        need_resolve_oom=False,
+        cache = None,
+        **kwargs
+    ):
+        super().__init__(kernel_backend)
+        
+        self.config = self._create_diffusers_config(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            dtype=dtype,
+        )
+        
+        self.in_channels = in_channels
+        self.dtype = dtype
+        self.need_resolve_oom = need_resolve_oom
+        self._initialize_core_model(ckpt_path, quant_type, cache, **kwargs)
+    
+    def _initialize_core_model(self, ckpt_path, quant_type, cache, **kwargs):
+        """Initialize core model"""
+        self.core_model = ZImageTransformer2DModelCore(
+            all_f_patch_size = [1],
+            all_patch_size = [2],
+            axes_dims = [
+                32,
+                48,
+                48
+            ],
+            axes_lens = [
+                1536,
+                512,
+                512
+            ],
+            cap_feat_dim = 2560,
+            dim = 3840,
+            in_channels = 16,
+            n_heads = 30,
+            n_kv_heads = 30,
+            n_layers = 30,
+            n_refiner_layers = 2,
+            norm_eps = 1e-05,
+            qk_norm = True,
+            rope_theta = 256.0,
+            t_scale = 1000.0,
             data_type=self.config.dtype,
             quant_dtype=quant_type,
             cache=cache,
@@ -471,6 +536,7 @@ class ModelWrapperFactory:
         'sdxl_controlnet': SDXLControlnetModelWrapper,
         'flux_controlnet': FluxControlnetWrapper,
         'wan': WanTransformer3DWrapper,
+        "zimage": ZImageTransformerWrapper
     }
     
     @classmethod
@@ -547,7 +613,7 @@ class FastDMEngine:
         
         Args:
             model_path: 模型路径
-            architecture: 模型架构 (sdxl/flux/sd3/qwen/wan)
+            architecture: 模型架构 (sdxl/flux/sd3/qwen/zimage/wan)
             device: GPU设备号
             data_type: 数据类型 (float16/bfloat16)
             use_fp8: 是否使用 FP8
@@ -653,7 +719,7 @@ class FastDMEngine:
                     kernel_backend=kernel_backend
                 ).eval()
 
-            elif self.architecture in ["flux", "sd35", "qwen"]:
+            elif self.architecture in ["flux", "sd35", "qwen", "zimage"]:
                 model_type = self.architecture
 
                 self.pipe.transformer = create_model(
@@ -667,7 +733,7 @@ class FastDMEngine:
                 ).eval()
                 
                 # 处理 OOM
-                if self.oom_resolve and model_type in ["qwen", "flux"]:
+                if self.oom_resolve and model_type in ["qwen", "flux", "zimage"]:
                     self._setup_oom_resolve(model_type)
 
             elif "wan" == self.architecture or "wan-i2v" == self.architecture:
@@ -694,7 +760,7 @@ class FastDMEngine:
                 )
             
             # 设置设备
-            if self.oom_resolve and self.architecture in ["qwen", "flux"]:
+            if self.oom_resolve and self.architecture in ["qwen", "flux", "zimage"]:
                 self.pipe.vae.to("cuda")
             else:
                 self.pipe.to("cuda")
@@ -710,7 +776,7 @@ class FastDMEngine:
             from fastdm.utils.qwen_vae import qwen_vae_new_decode, qwen_vae_new_encode
             AutoencoderKLQwenImage._decode = qwen_vae_new_decode
             AutoencoderKLQwenImage._encode = qwen_vae_new_encode
-        else:  # flux
+        else:  # flux or zimage
             from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
             from fastdm.utils.flux_vae import flux_vae_new_decode, flux_vae_new_encode
             AutoencoderKL._decode = flux_vae_new_decode

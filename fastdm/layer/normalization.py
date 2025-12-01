@@ -159,6 +159,36 @@ class FP32LayerNorm:
         output_ = F.layer_norm(input.float(), self.normalized_shape, self.weight, self.bias, self.eps)
         return output_.to(input.dtype)
 
+class LayerNorm:
+    def __init__(
+        self,
+        normalized_shape: Union[int, list[int], Size],
+        eps: float = 1e-5,
+        elementwise_affine: bool = True,
+        bias: bool = True,
+        device=None,
+        dtype=None,
+    ) -> None:
+        super().__init__()
+        if isinstance(normalized_shape, numbers.Integral):
+            # mypy error: incompatible types in assignment
+            normalized_shape = (normalized_shape,)  # type: ignore[assignment]
+        self.normalized_shape = tuple(normalized_shape)  # type: ignore[arg-type]
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+        if self.elementwise_affine:
+            self.weight = torch.ones(self.normalized_shape, dtype=dtype, device=device)
+            if bias:
+                self.bias = torch.zeros(self.normalized_shape, dtype=dtype, device=device)
+            else:
+                self.bias = None
+        else:
+            self.weight = None
+            self.bias = None
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.layer_norm(input, self.normalized_shape, self.weight, self.bias, self.eps)
+
 class AdaLayerNormZero:
     r"""
     Norm layer adaptive layer norm zero (adaLN-Zero).

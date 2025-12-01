@@ -11,7 +11,7 @@ def add_common_args(parser):
     parser.add_argument('--oom-resolve', action='store_true', help="resolve OOM error")
     parser.add_argument('--model-path', default='', help="Directory for diffusion model path")
     parser.add_argument('--data-type', default="bfloat16", help="data type: bfloat16/float16")
-    parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd35/qwen/sdxl-controlnet/flux-controlnet")
+    parser.add_argument('--architecture', default="flux", help="model architecture: sdxl/flux/sd35/qwen/zimage/sdxl-controlnet/flux-controlnet")
     parser.add_argument('--cache-config', type=str, default=None, help="cache config json file path")
 
     # 生成参数

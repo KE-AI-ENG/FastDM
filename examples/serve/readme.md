@@ -10,7 +10,7 @@
 
 `python gradio_launch.py --model-path /path/to/qwen-image --use-int8 --architecture qwen --device 0 --cache-config ../xcaching/configs/teacache_qwenimage.json --port 7890 --task t2i`
 
-对于Qwen-Image/FLUX模型，配置`--oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(生图分辨率需要小于768)。此模式会影响生成速度，如使用较大显存的卡，不建议使能该选项。 
+对于Qwen-Image/ZImage/FLUX模型，配置`--oom-resolve`可以在4090/4090D-24GB，A100-40GB，RTX8000等小显存卡上运行避免出现OOM error(建议生图分辨率小于768)。此模式会影响生成速度，如使用较大显存的卡，不建议使能该选项。 
 
 对于Qwen模型，小于24GB显存的卡上, 会触发更多部分的量化以进一步减少显存占用, 实测发现这会造成一些生成效果的影响。
 

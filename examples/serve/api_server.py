@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 基于FastDM的模型推理FastAPI服务器
-支持多种架构：flux, qwen, wan等
+支持多种架构：flux, qwen, zimage, wan等
 """
 
 import os

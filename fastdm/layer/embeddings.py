@@ -146,6 +146,51 @@ class PixArtAlphaTextProjection:
         hidden_states = self.linear2.forward(hidden_states)
         return hidden_states
 
+class RopeEmbedder:
+    def __init__(
+        self,
+        theta: float = 256.0,
+        axes_dims: List[int] = (16, 56, 56),
+        axes_lens: List[int] = (64, 128, 128),
+    ):
+        self.theta = theta
+        self.axes_dims = axes_dims
+        self.axes_lens = axes_lens
+        assert len(axes_dims) == len(axes_lens), "axes_dims and axes_lens must have the same length"
+        self.freqs_cis = None
+
+    @staticmethod
+    def precompute_freqs_cis(dim: List[int], end: List[int], theta: float = 256.0):
+        with torch.device("cpu"):
+            freqs_cis = []
+            for i, (d, e) in enumerate(zip(dim, end)):
+                freqs = 1.0 / (theta ** (torch.arange(0, d, 2, dtype=torch.float64, device="cpu") / d))
+                timestep = torch.arange(e, device=freqs.device, dtype=torch.float64)
+                freqs = torch.outer(timestep, freqs).float()
+                freqs_cis_i = torch.polar(torch.ones_like(freqs), freqs).to(torch.complex64)  # complex64
+                freqs_cis.append(freqs_cis_i)
+
+            return freqs_cis
+
+    def __call__(self, ids: torch.Tensor):
+        assert ids.ndim == 2
+        assert ids.shape[-1] == len(self.axes_dims)
+        device = ids.device
+
+        if self.freqs_cis is None:
+            self.freqs_cis = self.precompute_freqs_cis(self.axes_dims, self.axes_lens, theta=self.theta)
+            self.freqs_cis = [freqs_cis.to(device) for freqs_cis in self.freqs_cis]
+        else:
+            # Ensure freqs_cis are on the same device as ids
+            if self.freqs_cis[0].device != device:
+                self.freqs_cis = [freqs_cis.to(device) for freqs_cis in self.freqs_cis]
+
+        result = []
+        for i in range(len(self.axes_dims)):
+            index = ids[:, i]
+            result.append(self.freqs_cis[i][index])
+        return torch.cat(result, dim=-1)
+
 def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
     if embed_dim % 2 != 0:
         raise ValueError("embed_dim must be divisible by 2")
@@ -373,6 +418,49 @@ class PatchEmbed:
                 pos_embed = self.pos_embed
 
         return (latent + pos_embed).to(latent.dtype)
+
+class TimestepEmbedder:
+    def __init__(self, out_size, mid_size=None, frequency_embedding_size=256, data_type=torch.bfloat16):
+        super().__init__()
+        if mid_size is None:
+            mid_size = out_size
+        self.mlp = [
+            QLinear(
+                frequency_embedding_size,
+                mid_size,
+                bias=True,
+                data_type=data_type
+            ),
+            None,
+            QLinear(
+                mid_size,
+                out_size,
+                bias=True,
+                data_type=data_type
+            ),
+        ]
+
+        self.frequency_embedding_size = frequency_embedding_size
+
+    @staticmethod
+    def timestep_embedding(t, dim, max_period=10000):
+        half = dim // 2
+        freqs = torch.exp(
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device) / half
+        )
+        args = t[:, None].float() * freqs[None]
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if dim % 2:
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+        return embedding
+
+    def forward(self, t):
+        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
+        weight_dtype = self.mlp[0].weight.dtype
+        if weight_dtype.is_floating_point:
+            t_freq = t_freq.to(weight_dtype)
+        t_emb = self.mlp[2].forward(torch.nn.functional.silu(self.mlp[0].forward(t_freq)))
+        return t_emb
 
 class Timesteps:
     def __init__(self, num_channels: int, flip_sin_to_cos: bool, downscale_freq_shift: float, scale: int = 1):

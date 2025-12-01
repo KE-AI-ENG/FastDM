@@ -258,6 +258,9 @@ class Attention:
 
         if "image_rotary_emb" in cross_attention_kwargs:
             image_rotary_emb = cross_attention_kwargs["image_rotary_emb"]
+        elif "freqs_cis" in cross_attention_kwargs: #zimage
+            freqs_cis = cross_attention_kwargs["freqs_cis"]
+            image_rotary_emb = torch.cat([torch.real(freqs_cis), torch.imag(freqs_cis)], dim=-1).squeeze(0).to(hidden_states.dtype)
         else:
             image_rotary_emb = None
 
