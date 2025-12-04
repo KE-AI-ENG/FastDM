@@ -494,6 +494,7 @@ class ZImageTransformer2DModelCore(BaseModelCore):
         cap_feats: List[torch.Tensor],
         patch_size=2,
         f_patch_size=1,
+        return_dict = True
     ):
 
         if self.need_resolve_oom: #need copy tensor to gpu
