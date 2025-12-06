@@ -4,7 +4,6 @@ from fastdm.kernel.registry import kernel_registry
 
 import triton
 import triton.language as tl
-import math
 
 @triton.jit
 def rms_norm_kernel(
@@ -15,8 +14,8 @@ def rms_norm_kernel(
     y_stride_c,
     x_stride_r, # how much to increase the pointer when moving by 1 row
     x_stride_c, # how much to increase the pointer when moving by 1 col
-    N,          # number of columns in X
-    eps,        # epsilon to avoid division by zero
+    N: tl.constexpr,          # number of columns in X
+    eps: tl.constexpr,        # epsilon to avoid division by zero
     BLOCK_SIZE: tl.constexpr,
 ):
     if tl.constexpr(in_ptr.dtype.element_ty == tl.float16) or tl.constexpr(
@@ -30,14 +29,14 @@ def rms_norm_kernel(
     out_ptr += pid * y_stride_r
     in_ptr += pid * x_stride_r
 
-    mask = tl.arange(0, BLOCK_SIZE) < N
     cols = tl.arange(0, BLOCK_SIZE)
+    mask = cols < N
     x = tl.load(in_ptr + cols * x_stride_c, mask, other=0.0).to(cdtype)
 
-    var = tl.sum(x * x, axis=0) / N
-    rrms = 1 / tl.sqrt(var + eps)
+    var = tl.sum(x * x, axis=0) / N + eps
+    rrms = tl.rsqrt(var)  # 1 / sqrt
 
-    w = tl.load(w_ptr + tl.arange(0, BLOCK_SIZE), mask=mask, other=0.0)
+    w = tl.load(w_ptr + cols, mask=mask, other=0.0)
     y = (x * rrms * w).to(cdtype)
     tl.store(out_ptr + cols * y_stride_c, y, mask=mask)
 
