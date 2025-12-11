@@ -11,7 +11,29 @@ INPUT_ARGS = [
     [1, 14, 24, 128],
     [2, 4096, 24, 64],
     [2, 589, 24, 64],
+
+    # test
+    # [1, 4096, 24, 128],
+    # [1, 512, 24, 128],
+    # [1, 15, 1, 128],    # small M
+    # [1, 4096*100, 24, 128],
 ]
+
+def test_rmsnorm(dtype = torch.bfloat16, backend="triton"):
+    unpass = 0
+    for INPUT_ARG in INPUT_ARGS:
+        if len(INPUT_ARG) == 4:
+            (B, S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((B, S, head_num, head_dim), device="cuda").to(dtype)
+        elif len(INPUT_ARG) == 3:
+            B = None
+            (S, head_num, head_dim) = INPUT_ARG
+            input: torch.Tensor = torch.randn((S, head_num, head_dim), device="cuda").to(dtype)
+        scale: torch.Tensor = torch.randn((head_dim,), device="cuda").to(dtype)
+        eps: float = 1e-06
+        set_global_backend(backend)
+        C_triton = rms_norm(input, scale, eps)
+
 
 def test_accuracy_rmsnorm(dtype = torch.bfloat16, backend="triton"):
     unpass = 0
@@ -84,6 +106,7 @@ def test_performance_rmsnorm(dtype = torch.bfloat16, backend1="cuda", backend2="
 
 
 if __name__ == "__main__":
+    # test_rmsnorm()
     test_accuracy_rmsnorm(backend="triton")
     test_accuracy_rmsnorm(backend="cuda")
     test_performance_rmsnorm(backend1="cuda", backend2="triton")
